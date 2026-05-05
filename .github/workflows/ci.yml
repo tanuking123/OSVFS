@@ -6,8 +6,10 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
+# Deny-by-default at the workflow level. Each job re-declares the minimum it
+# needs. This limits blast radius if any step or third-party action becomes
+# compromised.
+permissions: {}
 
 env:
   DOTNET_NOLOGO: true
@@ -21,20 +23,28 @@ concurrency:
 
 jobs:
   build-and-unit-test:
-    name: Build & Unit Tests
+    name: Build & Unit Tests (Windows)
     runs-on: windows-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # actions/checkout@v4.3.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          # CI doesn't push, so don't leave the GITHUB_TOKEN in .git/config.
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        # actions/setup-dotnet@v4.3.1
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           global-json-file: global.json
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        # actions/cache@v4.3.0
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', 'Directory.Packages.props', 'global.json') }}
@@ -58,42 +68,46 @@ jobs:
 
       - name: Upload unit test results
         if: always()
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: unit-test-results
           path: TestResults/*.trx
           if-no-files-found: warn
 
   integration-test:
-    name: Integration Tests (LocalStack)
-    runs-on: windows-latest
+    name: Integration Tests (LocalStack on Linux)
+    runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # actions/checkout@v4.3.1
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        # actions/setup-dotnet@v4.3.1
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           global-json-file: global.json
 
       - name: Cache NuGet packages
-        uses: actions/cache@v4
+        # actions/cache@v4.3.0
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', 'Directory.Packages.props', 'global.json') }}
           restore-keys: |
             nuget-${{ runner.os }}-
 
-      - name: Switch Docker to Linux engine
-        shell: pwsh
-        run: |
-          & "$Env:ProgramFiles\Docker\Docker\DockerCli.exe" -SwitchLinuxEngine
-          docker version
-          docker info --format '{{.OSType}}'
-
+      # Restore only the projects reachable from IntegrationTests (Core +
+      # IntegrationTests). The Windows host project pulls in Microsoft.Windows.ProjFS
+      # which is not buildable on Linux, but it is not referenced from these tests.
       - name: Restore (locked)
-        run: dotnet restore S3Files.Windows.slnx --locked-mode
+        run: dotnet restore tests/S3Files.Windows.IntegrationTests/S3Files.Windows.IntegrationTests.csproj --locked-mode
 
       - name: Build integration tests (Release)
         run: >
@@ -112,7 +126,8 @@ jobs:
 
       - name: Upload integration test results
         if: always()
-        uses: actions/upload-artifact@v4
+        # actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: integration-test-results
           path: TestResults/*.trx
