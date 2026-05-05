@@ -256,6 +256,37 @@ public sealed class S3BackendTests : IAsyncLifetime
         Assert.Equal(payload.Length, head!.Value.Size);
     }
 
+    [Fact]
+    public async Task Upload_uses_multipart_for_streams_above_threshold()
+    {
+        // 12 MiB is above the 8 MiB multipart threshold and exercises the part-loop path
+        // (5 + 5 + 2 MiB across three parts).
+        const int totalSize = 12 * 1024 * 1024;
+        var payload = new byte[totalSize];
+        for (var i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(i & 0xFF);
+        }
+
+        using var ms = new MemoryStream(payload);
+        var result = await backend.UploadAsync("big/blob.bin", ms, ifMatchETag: null, CancellationToken.None);
+
+        Assert.False(string.IsNullOrEmpty(result.ETag));
+        Assert.Equal(totalSize, result.Size);
+
+        var head = await backend.HeadAsync("big\\blob.bin", CancellationToken.None);
+        Assert.NotNull(head);
+        Assert.Equal(totalSize, head!.Value.Size);
+
+        // S3 multipart ETags are <md5>-<partCount>; the trailing -N is how we (and S3 clients
+        // generally) identify multipart-uploaded objects.
+        Assert.Contains('-', head.Value.ETag);
+
+        using var roundtrip = new MemoryStream();
+        await backend.ReadRangeAsync("big\\blob.bin", 0, totalSize, roundtrip, CancellationToken.None);
+        Assert.Equal(payload, roundtrip.ToArray());
+    }
+
     private async Task UploadBytesAsync(string s3Key, byte[] payload)
     {
         using var ms = new MemoryStream(payload);

@@ -1,15 +1,43 @@
 using Amazon.S3;
 using Amazon.S3.Model;
+using Amazon.S3.Transfer;
 using System.Net;
 using System.Runtime.CompilerServices;
 
 namespace S3Files.Windows.S3;
 
-internal sealed class S3Backend(string bucketName, string? endpointUrl = null) : IS3Backend, IDisposable
+internal sealed class S3Backend : IS3Backend, IDisposable
 {
-    private readonly AmazonS3Client client = CreateClient(endpointUrl);
+    /// <summary>Streams at or above this size are routed through TransferUtility's multipart
+    /// path. Picked to be well above the S3 5 MiB minimum part size so the multipart overhead
+    /// is worth paying.</summary>
+    private const long MultipartThresholdBytes = 8L * 1024 * 1024;
 
-    public void Dispose() => client.Dispose();
+    /// <summary>Per-part size for multipart uploads. Must be ≥ 5 MiB to satisfy the S3
+    /// minimum; the last part is allowed to be smaller.</summary>
+    private const long MultipartPartSizeBytes = 5L * 1024 * 1024;
+
+    private readonly string bucketName;
+    private readonly AmazonS3Client client;
+    private readonly TransferUtility transferUtility;
+
+    public S3Backend(string bucketName, string? endpointUrl = null)
+    {
+        this.bucketName = bucketName;
+        client = CreateClient(endpointUrl);
+        // Share a single TransferUtility per backend: it's documented thread-safe, holds no
+        // upload-specific state, and disposes only its internally-created client (not ours).
+        transferUtility = new TransferUtility(client, new TransferUtilityConfig
+        {
+            MinSizeBeforePartUpload = MultipartThresholdBytes,
+        });
+    }
+
+    public void Dispose()
+    {
+        transferUtility.Dispose();
+        client.Dispose();
+    }
 
     public async IAsyncEnumerable<S3ObjectInfo> ListAsync(
         string relativeDirectory,
@@ -200,25 +228,59 @@ internal sealed class S3Backend(string bucketName, string? endpointUrl = null) :
             throw new ArgumentException("Cannot upload to empty key.", nameof(relativePath));
         }
 
-        var request = new PutObjectRequest
+        // IfMatch lives on PutObject; on a multipart upload preconditions move to Complete
+        // and behave differently. Honor IfMatch on the simple path; let TransferUtility
+        // handle every other case (it auto-splits at MinSizeBeforePartUpload, parallelizes
+        // parts, and aborts cleanly on failure).
+        if (!string.IsNullOrEmpty(ifMatchETag))
+        {
+            return await SinglePutAsync(key, content, ifMatchETag, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            return await MultiPartPutAsync(key, content, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<UploadResult> SinglePutAsync(
+        string key, Stream content, string ifMatchETag, CancellationToken ct)
+    {
+        var resp = await client.PutObjectAsync(new PutObjectRequest
         {
             BucketName = bucketName,
             Key = key,
             InputStream = content,
             AutoCloseStream = false,
-        };
-        if (!string.IsNullOrEmpty(ifMatchETag))
-        {
-            request.IfMatch = ifMatchETag;
-        }
+            IfMatch = ifMatchETag,
+        }, ct).ConfigureAwait(false);
 
-        var resp = await client.PutObjectAsync(request, ct).ConfigureAwait(false);
-
-        var size = content.CanSeek ? content.Length : 0L;
-        return new UploadResult(
+        // PutObjectResponse carries no payload size — pass null and let the builder fall
+        // back to the stream length.
+        return new(
             ETag: resp.ETag ?? string.Empty,
             VersionId: resp.VersionId ?? string.Empty,
-            Size: size,
+            Size: content.CanSeek ? content.Length : 0L,
+            LastModified: DateTimeOffset.UtcNow);
+    }
+
+    private async Task<UploadResult> MultiPartPutAsync(
+        string key, Stream content, CancellationToken ct)
+    {
+        var resp = await transferUtility.UploadWithResponseAsync(new TransferUtilityUploadRequest
+        {
+            BucketName = bucketName,
+            Key = key,
+            InputStream = content,
+            AutoCloseStream = false,
+            PartSize = MultipartPartSizeBytes,
+        }, ct).ConfigureAwait(false);
+
+        // resp.Size is nullable: TransferUtility leaves it null on the small-file path that
+        // delegates to PutObject. The shared builder falls back to the stream length.
+        return new(
+            ETag: resp.ETag ?? string.Empty,
+            VersionId: resp.VersionId ?? string.Empty,
+            Size: resp.Size ?? (content.CanSeek ? content.Length : 0L),
             LastModified: DateTimeOffset.UtcNow);
     }
 
@@ -381,6 +443,12 @@ internal sealed class S3Backend(string bucketName, string? endpointUrl = null) :
         if (!string.IsNullOrEmpty(endpointUrl))
         {
             config.ServiceURL = endpointUrl;
+            // AWSSDK v4 defaults to flexible-checksum (CRC32) on every PUT and on multipart
+            // parts. Real S3 validates these correctly, but S3-compatible servers (LocalStack,
+            // MinIO) don't always implement the composite-checksum check on Complete and reject
+            // the upload with "Checksum Type mismatch". Only relax for endpoint-override mode.
+            config.RequestChecksumCalculation = Amazon.Runtime.RequestChecksumCalculation.WHEN_REQUIRED;
+            config.ResponseChecksumValidation = Amazon.Runtime.ResponseChecksumValidation.WHEN_REQUIRED;
         }
         return new AmazonS3Client(config);
     }
