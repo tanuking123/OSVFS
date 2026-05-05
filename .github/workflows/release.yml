@@ -102,6 +102,10 @@ jobs:
           # can be analysed against the build, but they don't ship in the zip.
           Get-ChildItem -Path publish -Recurse -Filter *.pdb -File | Remove-Item -Force
 
+          # Ship LICENSE alongside the binary so the license travels with the
+          # distributed artifact, independent of the source repository.
+          Copy-Item -Path 'LICENSE' -Destination 'publish\LICENSE' -Force
+
           Write-Host "Files to ship:"
           Get-ChildItem -Path publish -Recurse -File |
             Select-Object FullName, Length |
