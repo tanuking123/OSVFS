@@ -148,7 +148,7 @@ internal sealed class S3ChangeWatcher : IAsyncDisposable
     public void RecordLocalDeletePrefix(string s3KeyPrefix)
     {
         if (string.IsNullOrEmpty(s3KeyPrefix)) return;
-        var prefix = s3KeyPrefix.EndsWith('/') ? s3KeyPrefix : s3KeyPrefix + '/';
+        var prefix = EnsureTrailingSlash(s3KeyPrefix);
         foreach (var key in snapshot.Keys)
         {
             if (key.StartsWith(prefix, StringComparison.Ordinal))
@@ -176,8 +176,8 @@ internal sealed class S3ChangeWatcher : IAsyncDisposable
     public void RecordLocalRenamePrefix(string oldPrefix, string newPrefix)
     {
         if (string.IsNullOrEmpty(oldPrefix) || string.IsNullOrEmpty(newPrefix)) return;
-        var oldP = oldPrefix.EndsWith('/') ? oldPrefix : oldPrefix + '/';
-        var newP = newPrefix.EndsWith('/') ? newPrefix : newPrefix + '/';
+        var oldP = EnsureTrailingSlash(oldPrefix);
+        var newP = EnsureTrailingSlash(newPrefix);
         foreach (var (key, snap) in snapshot)
         {
             if (key.StartsWith(oldP, StringComparison.Ordinal))
@@ -206,7 +206,7 @@ internal sealed class S3ChangeWatcher : IAsyncDisposable
     public IDisposable BeginLocalPrefixChange(string s3KeyPrefix)
     {
         if (string.IsNullOrEmpty(s3KeyPrefix)) return EmptyDisposable.Instance;
-        var prefix = s3KeyPrefix.EndsWith('/') ? s3KeyPrefix : s3KeyPrefix + '/';
+        var prefix = EnsureTrailingSlash(s3KeyPrefix);
         localPrefixesInFlight[prefix] = 0;
         return new ReleaseToken(() => localPrefixesInFlight.TryRemove(prefix, out _));
     }
@@ -444,8 +444,15 @@ internal sealed class S3ChangeWatcher : IAsyncDisposable
     }
 
     /// <summary>
-    /// True when the previous and current snapshots disagree on identity. 
-    /// ETag is the primary signal; size and last-modified act as fallback for blank ETags.
+    /// Returns the input as a slash-terminated key prefix, leaving already-terminated
+    /// prefixes untouched.
+    /// </summary>
+    private static string EnsureTrailingSlash(string keyPrefix) =>
+        keyPrefix.EndsWith('/') ? keyPrefix : keyPrefix + '/';
+
+    /// <summary>
+    /// True when the previous and current snapshots disagree on identity. ETag is
+    /// the primary signal; size and last-modified act as fallback for blank ETags.
     /// </summary>
     private static bool HasChanged(ObjectSnapshot prev, S3ObjectInfo current)
     {
