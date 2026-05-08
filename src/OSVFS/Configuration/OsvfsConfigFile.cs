@@ -60,6 +60,16 @@ internal sealed class OsvfsConfigFile
     public string? AwsProfile { get; init; }
 
     /// <summary>
+    /// rclone-style upload bandwidth ceiling (e.g. <c>"5M"</c>). Null disables.
+    /// </summary>
+    public string? BandwidthUp { get; init; }
+
+    /// <summary>
+    /// rclone-style download bandwidth ceiling (e.g. <c>"10M"</c>). Null disables.
+    /// </summary>
+    public string? BandwidthDown { get; init; }
+
+    /// <summary>
     /// Returns a copy of this config with values from <paramref name="overlay"/> taking
     /// precedence wherever they are non-null. Used to fold the project-local
     /// <c>osvfs.toml</c> on top of the user-global <c>%APPDATA%/OSVFS/config.toml</c>.
@@ -76,5 +86,7 @@ internal sealed class OsvfsConfigFile
         ReadOnly = overlay.ReadOnly ?? ReadOnly,
         SyncIntervalSeconds = overlay.SyncIntervalSeconds ?? SyncIntervalSeconds,
         AwsProfile = overlay.AwsProfile ?? AwsProfile,
+        BandwidthUp = overlay.BandwidthUp ?? BandwidthUp,
+        BandwidthDown = overlay.BandwidthDown ?? BandwidthDown,
     };
 }

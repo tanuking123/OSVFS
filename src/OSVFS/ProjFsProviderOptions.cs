@@ -1,3 +1,4 @@
+using OSVFS.Net;
 using OSVFS.ObjectStore;
 
 namespace OSVFS;
@@ -58,4 +59,10 @@ internal sealed class ProjFsProviderOptions
     /// back to the SDK's default credential chain.
     /// </summary>
     public AwsCredential? Credentials { get; init; }
+
+    /// <summary>
+    /// Optional per-direction bandwidth ceilings. Each component null means
+    /// "no limit on that direction".
+    /// </summary>
+    public BandwidthLimits BandwidthLimits { get; init; }
 }

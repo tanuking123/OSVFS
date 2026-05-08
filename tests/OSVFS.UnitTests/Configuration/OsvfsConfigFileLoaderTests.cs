@@ -25,6 +25,8 @@ public class OsvfsConfigFileLoaderTests
             read-only = true
             sync-interval-seconds = 15
             aws-profile = "prod"
+            bandwidth-up = "5M"
+            bandwidth-down = "10M"
             """;
 
         var config = OsvfsConfigFileLoader.ParseContent(toml, "test.toml");
@@ -39,6 +41,8 @@ public class OsvfsConfigFileLoaderTests
         Assert.True(config.ReadOnly);
         Assert.Equal(15, config.SyncIntervalSeconds);
         Assert.Equal("prod", config.AwsProfile);
+        Assert.Equal("5M", config.BandwidthUp);
+        Assert.Equal("10M", config.BandwidthDown);
     }
 
     [Fact]
@@ -51,6 +55,8 @@ public class OsvfsConfigFileLoaderTests
             read_only = true
             sync_interval_seconds = 7
             aws_profile = "p"
+            bandwidth_up = "1M"
+            bandwidth_down = "2M"
             """;
 
         var config = OsvfsConfigFileLoader.ParseContent(toml, "test.toml");
@@ -60,6 +66,8 @@ public class OsvfsConfigFileLoaderTests
         Assert.True(config.ReadOnly);
         Assert.Equal(7, config.SyncIntervalSeconds);
         Assert.Equal("p", config.AwsProfile);
+        Assert.Equal("1M", config.BandwidthUp);
+        Assert.Equal("2M", config.BandwidthDown);
     }
 
     [Fact]

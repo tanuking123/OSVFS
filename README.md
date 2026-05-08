@@ -118,6 +118,8 @@ Open `C:\Users\you\OSVFS` in Explorer and the bucket contents appear.
 | `--aws-profile` | Use credentials previously saved by `osvfs credentials set --profile <name>` (encrypted with DPAPI in Windows Credential Manager). When omitted, the AWS SDK's default chain is used. | — |
 | `--prefix` | Optional key prefix within the bucket. When set, only objects under this prefix are projected into the virtualization root. | — |
 | `--sync-interval-seconds` | Polling interval for detecting external object-store changes; `0` disables | `30` |
+| `--bandwidth-up` | Upload bandwidth ceiling. Plain bytes/s by default; suffixes `K`/`M`/`G` mean KiB/s, MiB/s, GiB/s (e.g. `5M` = 5 MiB/s). Omit or set to `0` to disable. | — (unlimited) |
+| `--bandwidth-down` | Download bandwidth ceiling. Same format as `--bandwidth-up`. | — (unlimited) |
 | `--verbose` | Enable debug-level logging | off |
 
 To project only a sub-tree of a bucket — for example `s3://my-bucket/team-a/` —
@@ -125,6 +127,29 @@ pass `--prefix team-a/`. The virtualization root then mirrors that prefix as
 its own logical root: listings, hydration, writes, deletes, and renames all
 stay scoped to objects under the prefix, and the rest of the bucket is
 invisible.
+
+### Bandwidth limits
+
+`osvfs` runs as a long-lived background process, so a single large hydration
+or upload can saturate the link and starve other applications. Pass
+`--bandwidth-up` / `--bandwidth-down` (or set them in
+[`osvfs.toml`](#configuration-file)) to cap each direction independently:
+
+```powershell
+osvfs `
+  --bucket my-bucket `
+  --root-folder C:\Users\you\OSVFS `
+  --bandwidth-up 5M `       # cap uploads at 5 MiB/s
+  --bandwidth-down 10M      # cap downloads at 10 MiB/s
+```
+
+Values follow the rclone `--bwlimit` convention: a plain number is bytes per
+second, and the `K` / `M` / `G` suffixes mean KiB/s, MiB/s, and GiB/s
+respectively (`5M` = 5 MiB/s). Omitting the flag — or setting it to `0` —
+leaves that direction unlimited. The limit is enforced through a token
+bucket on the upload payload stream and the download response stream, so
+`TransferUtility`'s multipart workers and the on-demand hydration path are
+both paced by the same ceiling.
 
 ### Configuration file
 
@@ -150,6 +175,8 @@ endpoint-url         = "http://localhost:4566"   # optional
 region               = "ap-northeast-1"          # optional
 prefix               = "team-a/"                 # optional
 aws-profile          = "prod"                    # optional
+bandwidth-up         = "5M"                      # optional, "0" / omit = unlimited
+bandwidth-down       = "10M"                     # optional, "0" / omit = unlimited
 verbose              = false
 sync-interval-seconds = 30
 ```

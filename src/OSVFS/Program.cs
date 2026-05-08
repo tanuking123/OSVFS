@@ -3,6 +3,7 @@ using System.CommandLine;
 using OSVFS;
 using OSVFS.Configuration;
 using OSVFS.Credentials;
+using OSVFS.Net;
 using OSVFS.ObjectStore;
 using OSVFS.ProjFs;
 
@@ -60,6 +61,16 @@ var awsProfileOption = new Option<string?>("--aws-profile")
     Description = "Use credentials previously saved by 'osvfs credentials set --profile <name>' (encrypted with DPAPI in Windows Credential Manager).",
 };
 
+var bandwidthUpOption = new Option<string?>("--bandwidth-up")
+{
+    Description = "Upload bandwidth ceiling. Plain bytes/s by default; suffixes K/M/G mean KiB/s, MiB/s, GiB/s (e.g. '5M' = 5 MiB/s). Omit or set to 0 to disable.",
+};
+
+var bandwidthDownOption = new Option<string?>("--bandwidth-down")
+{
+    Description = "Download bandwidth ceiling. Plain bytes/s by default; suffixes K/M/G mean KiB/s, MiB/s, GiB/s (e.g. '10M' = 10 MiB/s). Omit or set to 0 to disable.",
+};
+
 var credentialStore = new WindowsCredentialStore();
 
 var rootCommand = new RootCommand("OSVFS — Object Storage Virtual File System for Windows: mount a cloud object-store bucket/container as a local folder via ProjFS.")
@@ -74,6 +85,8 @@ var rootCommand = new RootCommand("OSVFS — Object Storage Virtual File System 
     readOnlyOption,
     syncIntervalOption,
     awsProfileOption,
+    bandwidthUpOption,
+    bandwidthDownOption,
 };
 
 rootCommand.Subcommands.Add(CredentialsCommandFactory.Build(credentialStore));
@@ -131,6 +144,21 @@ rootCommand.SetAction(parseResult =>
         return ExitGeneralException;
     }
 
+    BandwidthLimits bandwidthLimits;
+    try
+    {
+        bandwidthLimits = new BandwidthLimits(
+            UpBytesPerSecond: BandwidthSize.Parse(
+                parseResult.GetValue(bandwidthUpOption) ?? fileConfig?.BandwidthUp),
+            DownBytesPerSecond: BandwidthSize.Parse(
+                parseResult.GetValue(bandwidthDownOption) ?? fileConfig?.BandwidthDown));
+    }
+    catch (FormatException ex)
+    {
+        logger.LogError("{Message}", ex.Message);
+        return ExitGeneralException;
+    }
+
     var options = new ProjFsProviderOptions
     {
         Provider = parseResult.GetValue(providerOption) ?? fileConfig?.Provider ?? ObjectStoreProvider.S3,
@@ -143,6 +171,7 @@ rootCommand.SetAction(parseResult =>
         ReadOnly = GetCliBool(parseResult, readOnlyOption) ?? fileConfig?.ReadOnly ?? false,
         SyncIntervalSeconds = parseResult.GetValue(syncIntervalOption) ?? fileConfig?.SyncIntervalSeconds ?? 30,
         Credentials = credentials,
+        BandwidthLimits = bandwidthLimits,
     };
 
     try

@@ -44,5 +44,12 @@
 # 0 disables the watcher.
 # sync-interval-seconds = 30
 
+# Upload bandwidth ceiling. Plain bytes/s by default; suffixes K/M/G mean
+# KiB/s, MiB/s, GiB/s (e.g. "5M" = 5 MiB/s). Omit or set to "0" to disable.
+# bandwidth-up = "5M"
+
+# Download bandwidth ceiling. Same format as bandwidth-up.
+# bandwidth-down = "10M"
+
 # Raise log verbosity to Debug.
 # verbose = false

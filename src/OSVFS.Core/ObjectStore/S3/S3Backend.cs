@@ -2,6 +2,7 @@ using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
+using OSVFS.Net;
 using System.Net;
 using System.Runtime.CompilerServices;
 
@@ -41,19 +42,35 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     private readonly TransferUtility transferUtility;
 
     /// <summary>
+    /// Optional throttle applied to upload payload streams. Owned by the backend.
+    /// </summary>
+    private readonly IRateLimiter? upLimiter;
+
+    /// <summary>
+    /// Optional throttle applied to download response streams. Owned by the backend.
+    /// </summary>
+    private readonly IRateLimiter? downLimiter;
+
+    /// <summary>
     /// Creates a backend bound to <paramref name="bucketName"/>. <paramref name="endpointUrl"/>
     /// switches the client into path-style addressing (LocalStack/MinIO); <paramref name="region"/>
     /// drives request signing; <paramref name="credentials"/> short-circuits the SDK chain.
+    /// <paramref name="upLimiter"/> / <paramref name="downLimiter"/> apply per-direction
+    /// bandwidth ceilings; either may be null to disable that direction.
     /// </summary>
     public S3Backend(
         string bucketName,
         string? endpointUrl = null,
         string? keyPrefix = null,
         string? region = null,
-        AwsCredential? credentials = null)
+        AwsCredential? credentials = null,
+        IRateLimiter? upLimiter = null,
+        IRateLimiter? downLimiter = null)
     {
         this.bucketName = bucketName;
         this.keyPrefix = KeyPath.NormalizeKeyPrefix(keyPrefix);
+        this.upLimiter = upLimiter;
+        this.downLimiter = downLimiter;
         client = CreateClient(endpointUrl, region, credentials);
         // Share a single TransferUtility per backend: it's documented thread-safe, holds no
         // upload-specific state, and disposes only its internally-created client (not ours).
@@ -64,12 +81,15 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     }
 
     /// <summary>
-    /// Disposes the shared TransferUtility and underlying S3 client.
+    /// Disposes the shared TransferUtility, underlying S3 client, and any limiters
+    /// the backend owns.
     /// </summary>
     public void Dispose()
     {
         transferUtility.Dispose();
         client.Dispose();
+        (upLimiter as IDisposable)?.Dispose();
+        (downLimiter as IDisposable)?.Dispose();
     }
 
     /// <inheritdoc/>
@@ -223,7 +243,12 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
             Key = KeyPath.FullKey(keyPrefix, KeyPath.ToObjectKey(relativePath)),
             ByteRange = new ByteRange(offset, offset + length - 1),
         }, ct).ConfigureAwait(false);
-        await resp.ResponseStream.CopyToAsync(destination, ct).ConfigureAwait(false);
+        // Wrap the response body in a rate-limited view when a download ceiling is configured;
+        // CopyToAsync then only pulls bytes as fast as the limiter releases them.
+        var source = downLimiter is null
+            ? resp.ResponseStream
+            : new RateLimitedStream(resp.ResponseStream, downLimiter);
+        await source.CopyToAsync(destination, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -237,13 +262,17 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         }
 
         var fullKey = KeyPath.FullKey(keyPrefix, relKey);
+        // Wrap the upload payload so the SDK's pulls (single PUT or multipart workers) are
+        // paced by the shared limiter. The wrapper preserves CanSeek/Length, so TransferUtility
+        // can still pick the multipart vs single-PUT path correctly.
+        var paced = upLimiter is null ? content : new RateLimitedStream(content, upLimiter);
         // IfMatch lives on PutObject; on a multipart upload preconditions move to Complete
         // and behave differently. Honor IfMatch on the simple path; let TransferUtility
         // handle every other case (it auto-splits at MinSizeBeforePartUpload, parallelizes
         // parts, and aborts cleanly on failure).
         return string.IsNullOrEmpty(ifMatchETag)
-            ? await MultiPartPutAsync(fullKey, content, ct).ConfigureAwait(false)
-            : await SinglePutAsync(fullKey, content, ifMatchETag, ct).ConfigureAwait(false);
+            ? await MultiPartPutAsync(fullKey, paced, ct).ConfigureAwait(false)
+            : await SinglePutAsync(fullKey, paced, ifMatchETag, ct).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -125,6 +125,8 @@ osvfs `
 | `--aws-profile` | `osvfs credentials set --profile <name>` で保存済みの認証情報を使う (Windows Credential Manager に DPAPI で暗号化保存)。未指定時は AWS SDK の標準チェーンにフォールバックする | — |
 | `--prefix` | バケット内のキープレフィックス。指定すると、このプレフィックス配下のオブジェクトだけが仮想化ルートに投影される | — |
 | `--sync-interval-seconds` | 外部オブジェクトストア変更を検出するポーリング間隔。`0` で無効化 | `30` |
+| `--bandwidth-up` | アップロード帯域の上限。サフィックス無しはバイト/秒、`K`/`M`/`G` は KiB/s, MiB/s, GiB/s (例: `5M` = 5 MiB/s)。未指定もしくは `0` で無制限 | — |
+| `--bandwidth-down` | ダウンロード帯域の上限。書式は `--bandwidth-up` と同じ | — |
 | `--verbose` | デバッグレベルのログを有効化 | off |
 
 バケット内の特定のサブツリーだけを投影したい場合 (例えば
@@ -132,6 +134,28 @@ osvfs `
 からはこのプレフィックスが論理ルートに見えるようになり、列挙・hydrate・
 書き込み・削除・リネームすべてがプレフィックス配下のオブジェクトにスコー
 プされます。バケット内のそれ以外のオブジェクトは見えなくなります。
+
+### 帯域制御
+
+`osvfs` は長時間バックグラウンドで動くプロセスのため、大きな hydrate や
+アップロードが回線を食い潰すと同居アプリケーションのレスポンスを劣化させ
+ます。`--bandwidth-up` / `--bandwidth-down` (または
+[`osvfs.toml`](#設定ファイル)) で双方向独立に上限を指定できます。
+
+```powershell
+osvfs `
+  --bucket my-bucket `
+  --root-folder C:\Users\you\OSVFS `
+  --bandwidth-up 5M `       # アップロードを 5 MiB/s に制限
+  --bandwidth-down 10M      # ダウンロードを 10 MiB/s に制限
+```
+
+書式は rclone の `--bwlimit` に倣っています。サフィックス無しはバイト/秒、
+`K` / `M` / `G` はそれぞれ KiB/s / MiB/s / GiB/s を意味します
+(`5M` = 5 MiB/s)。フラグを指定しないか `0` を指定すると、その方向は無制限
+です。アップロードペイロードのストリームとダウンロードレスポンスストリー
+ムの両方をトークンバケットで律速するため、`TransferUtility` の multipart
+ワーカーもオンデマンド hydrate も同じ上限の下で動きます。
 
 ### 設定ファイル
 
@@ -157,6 +181,8 @@ endpoint-url         = "http://localhost:4566"   # 任意
 region               = "ap-northeast-1"          # 任意
 prefix               = "team-a/"                 # 任意
 aws-profile          = "prod"                    # 任意
+bandwidth-up         = "5M"                      # 任意。"0" / 省略で無制限
+bandwidth-down       = "10M"                     # 任意。"0" / 省略で無制限
 verbose              = false
 sync-interval-seconds = 30
 ```

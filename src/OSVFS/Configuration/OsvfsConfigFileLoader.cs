@@ -118,6 +118,8 @@ internal static class OsvfsConfigFileLoader
             ReadOnly = ReadBool(table, "read-only", "read_only", sourcePath),
             SyncIntervalSeconds = ReadInt(table, "sync-interval-seconds", "sync_interval_seconds", sourcePath),
             AwsProfile = ReadString(table, "aws-profile", "aws_profile", sourcePath),
+            BandwidthUp = ReadString(table, "bandwidth-up", "bandwidth_up", sourcePath),
+            BandwidthDown = ReadString(table, "bandwidth-down", "bandwidth_down", sourcePath),
         };
     }
 
