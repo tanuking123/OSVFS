@@ -224,7 +224,8 @@
           "Microsoft.Windows.ProjFS": "[2.1.0, )",
           "OSVFS.Core": "[0.0.1, )",
           "System.CommandLine": "[2.0.7, )",
-          "System.Security.Cryptography.ProtectedData": "[10.0.7, )"
+          "System.Security.Cryptography.ProtectedData": "[10.0.7, )",
+          "Tomlyn": "[0.20.0, )"
         }
       },
       "osvfs.core": {
@@ -282,6 +283,12 @@
         "requested": "[10.0.7, )",
         "resolved": "10.0.7",
         "contentHash": "eqKW9wyPUhZi6pxy9Y0fQO/bdHROcwj0tYdmoGEPCPCtCJLFdVVAlzuuYYEnJI64HxhoXPYGhtx891g/jwN4rg=="
+      },
+      "Tomlyn": {
+        "type": "CentralTransitive",
+        "requested": "[0.20.0, )",
+        "resolved": "0.20.0",
+        "contentHash": "Z8TmFcz6oeULVSVGDvbF1h+gnCoy/6NbWrlsQg9f2i+lzqXtUoU4+2RJIm8/s/14uSu0OqTv6JcSngTw3tlkTQ=="
       }
     },
     "net10.0-windows7.0/win-x64": {}

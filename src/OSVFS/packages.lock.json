@@ -56,6 +56,12 @@
         "resolved": "10.0.7",
         "contentHash": "eqKW9wyPUhZi6pxy9Y0fQO/bdHROcwj0tYdmoGEPCPCtCJLFdVVAlzuuYYEnJI64HxhoXPYGhtx891g/jwN4rg=="
       },
+      "Tomlyn": {
+        "type": "Direct",
+        "requested": "[0.20.0, )",
+        "resolved": "0.20.0",
+        "contentHash": "Z8TmFcz6oeULVSVGDvbF1h+gnCoy/6NbWrlsQg9f2i+lzqXtUoU4+2RJIm8/s/14uSu0OqTv6JcSngTw3tlkTQ=="
+      },
       "AWSSDK.Core": {
         "type": "Transitive",
         "resolved": "4.0.6.1",

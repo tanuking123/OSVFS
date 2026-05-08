@@ -133,6 +133,48 @@ osvfs `
 書き込み・削除・リネームすべてがプレフィックス配下のオブジェクトにスコー
 プされます。バケット内のそれ以外のオブジェクトは見えなくなります。
 
+### 設定ファイル
+
+ルートコマンド `osvfs` に渡せるすべてのオプションは TOML 設定ファイルから
+も指定できます。次の順で検索されます。
+
+1. `./osvfs.toml` — カレントディレクトリ (プロジェクトローカル)
+2. `%APPDATA%\OSVFS\config.toml` — ユーザー単位 (マシン共通)
+
+プロジェクトローカルの値はユーザーローカルの値をキーごとに上書きし、コマ
+ンドライン引数は両方を上書きします。安定した既定値はファイルに置きつつ、
+個別オプションだけを CLI で都度上書きする使い方ができます。
+
+`credentials` サブコマンドは設定ファイルの影響を受けません。常に CLI 引数
+と対話プロンプトのみが入力源です。
+
+```toml
+# ./osvfs.toml もしくは %APPDATA%\OSVFS\config.toml
+provider             = "s3"
+bucket               = "my-bucket"
+root-folder          = "C:/Users/you/OSVFS"
+endpoint-url         = "http://localhost:4566"   # 任意
+region               = "ap-northeast-1"          # 任意
+prefix               = "team-a/"                 # 任意
+aws-profile          = "prod"                    # 任意
+verbose              = false
+sync-interval-seconds = 30
+```
+
+編集用のサンプル [`osvfs.toml.example`](./osvfs.toml.example) をリポジトリ
+ルートに同梱しています。`dotnet publish` 時には `osvfs.exe` と同じ階層にも
+コピーされるので、`osvfs.toml` (または `%APPDATA%\OSVFS\config.toml`) に
+リネームして必要なキーをコメントアウト解除するだけで使えます。
+
+キーはケバブケース (`root-folder`) とスネークケース (`root_folder`) のどち
+らも受け付けます。CLI フラグ名と一致するケバブケースが推奨です。設定ファ
+イルを置けば、通常のマウントは次のように短く済みます。
+
+```powershell
+osvfs                       # オプションはすべて osvfs.toml から取得
+osvfs --bucket other-bucket # 設定ファイルを使いつつ --bucket だけ上書き
+```
+
 ### AWS 認証情報の管理
 
 OSVFS は AWS SDK 標準の認証情報チェーン (環境変数 / 共有プロファイル

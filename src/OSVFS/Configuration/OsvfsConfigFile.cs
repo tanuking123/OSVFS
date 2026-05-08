@@ -1,0 +1,80 @@
+using OSVFS.ObjectStore;
+
+namespace OSVFS.Configuration;
+
+/// <summary>
+/// Strongly-typed view of an <c>osvfs.toml</c> file. Every property is nullable
+/// because settings absent from the file fall back to the next source in the
+/// CLI &gt; project file &gt; user file &gt; built-in default chain.
+/// </summary>
+internal sealed class OsvfsConfigFile
+{
+    /// <summary>
+    /// Object-store provider backing the virtualization root.
+    /// </summary>
+    public ObjectStoreProvider? Provider { get; init; }
+
+    /// <summary>
+    /// Bucket (S3/GCS) or container (Azure) projected into the virtualization root.
+    /// </summary>
+    public string? Bucket { get; init; }
+
+    /// <summary>
+    /// Local directory marked as the ProjFS virtualization root.
+    /// </summary>
+    public string? RootFolder { get; init; }
+
+    /// <summary>
+    /// Endpoint override for S3-compatible servers (LocalStack, MinIO).
+    /// </summary>
+    public string? EndpointUrl { get; init; }
+
+    /// <summary>
+    /// AWS region; null falls back to the SDK's default resolution chain.
+    /// </summary>
+    public string? Region { get; init; }
+
+    /// <summary>
+    /// Optional key prefix; only objects beneath it are projected into the root.
+    /// </summary>
+    public string? Prefix { get; init; }
+
+    /// <summary>
+    /// When true, raises log verbosity to Debug.
+    /// </summary>
+    public bool? Verbose { get; init; }
+
+    /// <summary>
+    /// When true, ignore notification-driven local mutations and disable the change watcher.
+    /// </summary>
+    public bool? ReadOnly { get; init; }
+
+    /// <summary>
+    /// Polling interval (seconds) for the change watcher; zero disables it.
+    /// </summary>
+    public int? SyncIntervalSeconds { get; init; }
+
+    /// <summary>
+    /// Profile name in the OSVFS credential store; null means use the SDK's default chain.
+    /// </summary>
+    public string? AwsProfile { get; init; }
+
+    /// <summary>
+    /// Returns a copy of this config with values from <paramref name="overlay"/> taking
+    /// precedence wherever they are non-null. Used to fold the project-local
+    /// <c>osvfs.toml</c> on top of the user-global <c>%APPDATA%/OSVFS/config.toml</c>.
+    /// </summary>
+    public OsvfsConfigFile MergeOverlay(OsvfsConfigFile overlay) => new()
+    {
+        Provider = overlay.Provider ?? Provider,
+        Bucket = overlay.Bucket ?? Bucket,
+        RootFolder = overlay.RootFolder ?? RootFolder,
+        EndpointUrl = overlay.EndpointUrl ?? EndpointUrl,
+        Region = overlay.Region ?? Region,
+        Prefix = overlay.Prefix ?? Prefix,
+        Verbose = overlay.Verbose ?? Verbose,
+        ReadOnly = overlay.ReadOnly ?? ReadOnly,
+        SyncIntervalSeconds = overlay.SyncIntervalSeconds ?? SyncIntervalSeconds,
+        AwsProfile = overlay.AwsProfile ?? AwsProfile,
+    };
+}

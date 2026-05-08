@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using System.CommandLine;
 using OSVFS;
+using OSVFS.Configuration;
 using OSVFS.Credentials;
 using OSVFS.ObjectStore;
 using OSVFS.ProjFs;
@@ -8,22 +9,19 @@ using OSVFS.ProjFs;
 const int ExitSuccess = 0;
 const int ExitGeneralException = 2;
 
-var providerOption = new Option<ObjectStoreProvider>("--provider")
+var providerOption = new Option<ObjectStoreProvider?>("--provider")
 {
     Description = "Object-store provider backing the virtualization root. Currently only 's3' is fully implemented; 'gcs' and 'azureblob' fail at startup.",
-    DefaultValueFactory = _ => ObjectStoreProvider.S3,
 };
 
-var bucketOption = new Option<string>("--bucket")
+var bucketOption = new Option<string?>("--bucket")
 {
-    Description = "Bucket (S3/GCS) or container (Azure) that will be accessible through the file system.",
-    Required = true,
+    Description = "Bucket (S3/GCS) or container (Azure) that will be accessible through the file system. Required, but may also be supplied via osvfs.toml.",
 };
 
-var rootFolderOption = new Option<string>("--root-folder")
+var rootFolderOption = new Option<string?>("--root-folder")
 {
-    Description = "Path to the virtualization root.",
-    Required = true,
+    Description = "Path to the virtualization root. Required, but may also be supplied via osvfs.toml.",
 };
 
 var endpointUrlOption = new Option<string?>("--endpoint-url")
@@ -52,10 +50,9 @@ var readOnlyOption = new Option<bool>("--read-only")
     Hidden = true,
 };
 
-var syncIntervalOption = new Option<int>("--sync-interval-seconds")
+var syncIntervalOption = new Option<int?>("--sync-interval-seconds")
 {
     Description = "Polling interval (seconds) for detecting external S3 changes. 0 disables.",
-    DefaultValueFactory = _ => 30,
 };
 
 var awsProfileOption = new Option<string?>("--aws-profile")
@@ -83,8 +80,21 @@ rootCommand.Subcommands.Add(CredentialsCommandFactory.Build(credentialStore));
 
 rootCommand.SetAction(parseResult =>
 {
+    OsvfsConfigFile? fileConfig;
+    try
+    {
+        fileConfig = OsvfsConfigFileLoader.LoadFromDefaultLocations();
+    }
+    catch (OsvfsConfigException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return ExitGeneralException;
+    }
+
+    var verbose = GetCliBool(parseResult, verboseOption) ?? fileConfig?.Verbose ?? false;
+
     using var loggerFactory = LoggerFactory.Create(builder => builder
-        .SetMinimumLevel(parseResult.GetValue(verboseOption) ? LogLevel.Debug : LogLevel.Information)
+        .SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information)
         .AddSimpleConsole(o =>
         {
             o.SingleLine = true;
@@ -93,8 +103,24 @@ rootCommand.SetAction(parseResult =>
 
     var logger = loggerFactory.CreateLogger("OSVFS");
 
+    var bucket = parseResult.GetValue(bucketOption) ?? fileConfig?.Bucket;
+    if (string.IsNullOrEmpty(bucket))
+    {
+        logger.LogError(
+            "--bucket is required. Pass it on the command line or set 'bucket' in osvfs.toml / %APPDATA%/OSVFS/config.toml.");
+        return ExitGeneralException;
+    }
+
+    var rootFolder = parseResult.GetValue(rootFolderOption) ?? fileConfig?.RootFolder;
+    if (string.IsNullOrEmpty(rootFolder))
+    {
+        logger.LogError(
+            "--root-folder is required. Pass it on the command line or set 'root-folder' in osvfs.toml / %APPDATA%/OSVFS/config.toml.");
+        return ExitGeneralException;
+    }
+
+    var profileName = parseResult.GetValue(awsProfileOption) ?? fileConfig?.AwsProfile;
     AwsCredential? credentials;
-    var profileName = parseResult.GetValue(awsProfileOption);
     try
     {
         credentials = ResolveCredential(credentialStore, profileName, logger);
@@ -107,15 +133,15 @@ rootCommand.SetAction(parseResult =>
 
     var options = new ProjFsProviderOptions
     {
-        Provider = parseResult.GetValue(providerOption),
-        Bucket = parseResult.GetValue(bucketOption)!,
-        VirtRoot = parseResult.GetValue(rootFolderOption)!,
-        EndpointUrl = parseResult.GetValue(endpointUrlOption),
-        Region = parseResult.GetValue(regionOption),
-        KeyPrefix = parseResult.GetValue(prefixOption),
-        Verbose = parseResult.GetValue(verboseOption),
-        ReadOnly = parseResult.GetValue(readOnlyOption),
-        SyncIntervalSeconds = parseResult.GetValue(syncIntervalOption),
+        Provider = parseResult.GetValue(providerOption) ?? fileConfig?.Provider ?? ObjectStoreProvider.S3,
+        Bucket = bucket,
+        VirtRoot = rootFolder,
+        EndpointUrl = parseResult.GetValue(endpointUrlOption) ?? fileConfig?.EndpointUrl,
+        Region = parseResult.GetValue(regionOption) ?? fileConfig?.Region,
+        KeyPrefix = parseResult.GetValue(prefixOption) ?? fileConfig?.Prefix,
+        Verbose = verbose,
+        ReadOnly = GetCliBool(parseResult, readOnlyOption) ?? fileConfig?.ReadOnly ?? false,
+        SyncIntervalSeconds = parseResult.GetValue(syncIntervalOption) ?? fileConfig?.SyncIntervalSeconds ?? 30,
         Credentials = credentials,
     };
 
@@ -131,6 +157,16 @@ rootCommand.SetAction(parseResult =>
 });
 
 return rootCommand.Parse(args).Invoke();
+
+// Returns the boolean value of a flag-style option, but only when the user
+// explicitly passed it; returns null when the option was defaulted, so callers
+// can fall through to the TOML config or built-in default.
+static bool? GetCliBool(ParseResult parseResult, Option<bool> option)
+{
+    var result = parseResult.GetResult(option);
+    if (result is null || result.Implicit) return null;
+    return parseResult.GetValue(option);
+}
 
 // Resolves an --aws-profile name against the credential store. Returns null when no
 // profile is requested; throws when the requested profile is missing.

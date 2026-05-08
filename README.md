@@ -126,6 +126,49 @@ its own logical root: listings, hydration, writes, deletes, and renames all
 stay scoped to objects under the prefix, and the rest of the bucket is
 invisible.
 
+### Configuration file
+
+Every option that can be passed to the root `osvfs` command can also be set
+in a TOML configuration file. Two locations are searched, in this order:
+
+1. `./osvfs.toml` — relative to the current working directory (project-local)
+2. `%APPDATA%\OSVFS\config.toml` — per-user, machine-global
+
+Values from the project file override the user file per key. CLI flags
+override both, so you can keep stable defaults in the file and tweak
+individual options at the prompt.
+
+`credentials` sub-commands are not affected by the config file; they always
+take their inputs from CLI arguments and interactive prompts.
+
+```toml
+# ./osvfs.toml or %APPDATA%\OSVFS\config.toml
+provider             = "s3"
+bucket               = "my-bucket"
+root-folder          = "C:/Users/you/OSVFS"
+endpoint-url         = "http://localhost:4566"   # optional
+region               = "ap-northeast-1"          # optional
+prefix               = "team-a/"                 # optional
+aws-profile          = "prod"                    # optional
+verbose              = false
+sync-interval-seconds = 30
+```
+
+A ready-to-edit sample is shipped as
+[`osvfs.toml.example`](./osvfs.toml.example) at the repo root and is also
+copied next to `osvfs.exe` on `dotnet publish`, so you can rename it to
+`osvfs.toml` (or `%APPDATA%\OSVFS\config.toml`) and uncomment the keys you
+need.
+
+Both kebab-case (`root-folder`) and snake_case (`root_folder`) keys are
+accepted; kebab matches the CLI flag names and is preferred. With a config
+file in place, a typical mount becomes:
+
+```powershell
+osvfs                       # all options sourced from osvfs.toml
+osvfs --bucket other-bucket # config file used, --bucket overrides it
+```
+
 ### Managing AWS credentials
 
 OSVFS can resolve AWS credentials through the standard AWS SDK chain
