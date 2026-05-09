@@ -377,6 +377,27 @@ internal sealed class ProjFsProvider : IRequiredCallbacks, IDisposable
         var userMetadata = AdsMetadataStore.TryRead(
             fullPath, AdsMetadataStore.UserMetaStreamName, logger);
 
+        // Atomic-replace editors (VS Code, modern Notepad, …) save by writing to a
+        // temp file and renaming it over the original — that wipes our ADS even
+        // though the bucket-side object still has its x-amz-meta-* headers. Fall
+        // back to a HEAD against the existing remote object so the upload can
+        // recover the previous metadata. Brand-new local files HEAD as 404 and
+        // upload with no metadata as before.
+        if (userMetadata is null)
+        {
+            try
+            {
+                var head = backend.HeadAsync(relativePath, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                userMetadata = head?.UserMetadata;
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(
+                    ex, "HEAD fallback for user metadata failed: {RelativePath}", relativePath);
+            }
+        }
+
         UploadResult result;
         long uploadedBytes;
         try
