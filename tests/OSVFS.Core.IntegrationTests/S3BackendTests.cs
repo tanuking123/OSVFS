@@ -406,6 +406,76 @@ public sealed class S3BackendTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Rename_preserves_destination_user_metadata_on_atomic_replace()
+    {
+        // Reproduces the editor "atomic-replace save" pattern:
+        //   1. existing file.txt has user metadata,
+        //   2. editor uploads new content as file.txt~ with no metadata,
+        //   3. editor renames file.txt~ over file.txt.
+        // Without metadata preservation the destination's x-amz-meta-* would be
+        // wiped because CopyObject defaults to copying the source's (empty) metadata.
+        var originalMetadata = new Dictionary<string, string>
+        {
+            ["tag"] = "keep-me",
+            ["author"] = "alice",
+        };
+        using (var ms = new MemoryStream("v1"u8.ToArray()))
+        {
+            await backend.UploadAsync(
+                "atomic/file.txt", ms, ifMatchETag: null, CancellationToken.None,
+                userMetadata: originalMetadata);
+        }
+
+        // Editor uploads the new content as a temp object with no user metadata.
+        using (var tmp = new MemoryStream("v2-new-content"u8.ToArray()))
+        {
+            await backend.UploadAsync(
+                "atomic/file.txt~", tmp, ifMatchETag: null, CancellationToken.None);
+        }
+
+        // Editor performs the atomic-replace via rename.
+        await backend.RenameAsync("atomic\\file.txt~", "atomic\\file.txt", CancellationToken.None);
+
+        var head = await backend.HeadAsync("atomic\\file.txt", CancellationToken.None);
+        Assert.NotNull(head);
+        // Content reflects the new (temp) bytes.
+        using (var rt = new MemoryStream())
+        {
+            await backend.ReadRangeAsync(
+                "atomic\\file.txt", 0, head!.Value.Size, rt, CancellationToken.None);
+            Assert.Equal("v2-new-content", System.Text.Encoding.UTF8.GetString(rt.ToArray()));
+        }
+        // Metadata reflects the destination's pre-existing headers, not the empty source.
+        Assert.NotNull(head!.Value.UserMetadata);
+        Assert.Equal("keep-me", head.Value.UserMetadata!["tag"]);
+        Assert.Equal("alice", head.Value.UserMetadata["author"]);
+    }
+
+    [Fact]
+    public async Task Rename_to_brand_new_destination_keeps_source_user_metadata()
+    {
+        // When the destination doesn't already exist, the default CopyObject directive
+        // should still carry the source's metadata over (no override applied).
+        var sourceMetadata = new Dictionary<string, string>
+        {
+            ["origin"] = "source",
+        };
+        using (var ms = new MemoryStream("body"u8.ToArray()))
+        {
+            await backend.UploadAsync(
+                "rename/from.txt", ms, ifMatchETag: null, CancellationToken.None,
+                userMetadata: sourceMetadata);
+        }
+
+        await backend.RenameAsync("rename\\from.txt", "rename\\to.txt", CancellationToken.None);
+
+        var head = await backend.HeadAsync("rename\\to.txt", CancellationToken.None);
+        Assert.NotNull(head);
+        Assert.NotNull(head!.Value.UserMetadata);
+        Assert.Equal("source", head.Value.UserMetadata!["origin"]);
+    }
+
+    [Fact]
     public async Task Upload_uses_multipart_for_streams_above_threshold()
     {
         // 12 MiB is above the 8 MiB multipart threshold and exercises the part-loop path

@@ -459,7 +459,14 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         var oldKey = KeyPath.FullKey(keyPrefix, oldRelKey);
         var newKey = KeyPath.FullKey(keyPrefix, newRelKey);
 
-        await CopyObjectAsync(oldKey, newKey, ct).ConfigureAwait(false);
+        // Atomic-replace pattern (editor writes to a temp key, then renames it
+        // over an existing target) would otherwise lose the destination's
+        // x-amz-meta-* because the default CopyObject directive copies the
+        // source's (empty) metadata. Carry the destination's existing user
+        // metadata across the replace so the round-trip stays intact.
+        var preservedMetadata = await TryHeadUserMetadataAsync(newKey, ct).ConfigureAwait(false);
+
+        await CopyObjectAsync(oldKey, newKey, ct, preservedMetadata).ConfigureAwait(false);
 
         await client.DeleteObjectAsync(new DeleteObjectRequest
         {
@@ -576,17 +583,54 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     }
 
     /// <summary>
-    /// Issues a single CopyObject within the same bucket.
+    /// Issues a single CopyObject within the same bucket. When
+    /// <paramref name="metadataOverride"/> is non-null the request switches to
+    /// REPLACE so the destination ends up with that exact metadata instead of
+    /// inheriting the source's; null leaves the SDK default (COPY from source).
     /// </summary>
     private Task<CopyObjectResponse> CopyObjectAsync(
-        string sourceKey, string destinationKey, CancellationToken ct) =>
-        client.CopyObjectAsync(new CopyObjectRequest
+        string sourceKey,
+        string destinationKey,
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? metadataOverride = null)
+    {
+        var request = new CopyObjectRequest
         {
             SourceBucket = bucketName,
             SourceKey = sourceKey,
             DestinationBucket = bucketName,
             DestinationKey = destinationKey,
-        }, ct);
+        };
+        if (metadataOverride is { Count: > 0 })
+        {
+            request.MetadataDirective = S3MetadataDirective.REPLACE;
+            ApplyUserMetadata(request.Metadata, metadataOverride);
+        }
+        return client.CopyObjectAsync(request, ct);
+    }
+
+    /// <summary>
+    /// HEAD-only fetch of user metadata for a full bucket key. Returns null
+    /// when the object is missing or carries no <c>x-amz-meta-*</c>; any other
+    /// error is rethrown so the caller can decide whether to abort.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, string>?> TryHeadUserMetadataAsync(
+        string fullKey, CancellationToken ct)
+    {
+        try
+        {
+            var resp = await client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            {
+                BucketName = bucketName,
+                Key = fullKey,
+            }, ct).ConfigureAwait(false);
+            return ExtractUserMetadata(resp.Metadata);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Streams keys into 1000-key DeleteObjects batches.
