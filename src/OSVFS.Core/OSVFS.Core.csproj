@@ -9,6 +9,12 @@
     <!-- Core itself is AOT-safe; AOT warnings for transitive AWSSDK references
          are tolerated globally via WarningsNotAsErrors in Directory.Build.props. -->
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- Declare the RIDs the host project publishes against so the lock file is
+         pre-populated with the RID-specific section. Without this, the documented
+         `dotnet publish src\OSVFS -c Release -r win-x64` propagates the RID into
+         this project's restore and dirties packages.lock.json. The library itself
+         remains cross-platform — declaring RIDs only fixes lock-file pre-resolution. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
   <ItemGroup>

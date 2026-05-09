@@ -51,5 +51,19 @@
 # Download bandwidth ceiling. Same format as bandwidth-up.
 # bandwidth-down = "10M"
 
+# Stream size at or above which uploads are routed through the multipart path.
+# Same K/M/G suffixes as bandwidth-up. Defaults to "8M". Raise it on fat links
+# where a single PUT outperforms multipart's per-request overhead, lower it
+# when most files are small but you still want multipart's parallel parts.
+# multipart-threshold = "8M"
+
+# Per-part size used by multipart uploads. Must be between 5M (S3 minimum) and
+# 5G (S3 maximum); the last part may be smaller. Defaults to "5M". Pick a
+# larger value (16M-64M) on high-bandwidth links to amortize per-request
+# overhead. The S3 service caps a multipart upload at 10000 parts, so the
+# largest single object you can upload is part-size * 10000 (e.g. 16M parts
+# allow up to 160 GiB, 64M parts allow up to 640 GiB).
+# multipart-part-size = "16M"
+
 # Raise log verbosity to Debug.
 # verbose = false

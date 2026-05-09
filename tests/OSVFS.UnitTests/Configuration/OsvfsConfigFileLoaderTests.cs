@@ -27,6 +27,8 @@ public class OsvfsConfigFileLoaderTests
             aws-profile = "prod"
             bandwidth-up = "5M"
             bandwidth-down = "10M"
+            multipart-threshold = "16M"
+            multipart-part-size = "32M"
             """;
 
         var config = OsvfsConfigFileLoader.ParseContent(toml, "test.toml");
@@ -43,6 +45,8 @@ public class OsvfsConfigFileLoaderTests
         Assert.Equal("prod", config.AwsProfile);
         Assert.Equal("5M", config.BandwidthUp);
         Assert.Equal("10M", config.BandwidthDown);
+        Assert.Equal("16M", config.MultipartThreshold);
+        Assert.Equal("32M", config.MultipartPartSize);
     }
 
     [Fact]
@@ -57,6 +61,8 @@ public class OsvfsConfigFileLoaderTests
             aws_profile = "p"
             bandwidth_up = "1M"
             bandwidth_down = "2M"
+            multipart_threshold = "8M"
+            multipart_part_size = "16M"
             """;
 
         var config = OsvfsConfigFileLoader.ParseContent(toml, "test.toml");
@@ -68,6 +74,8 @@ public class OsvfsConfigFileLoaderTests
         Assert.Equal("p", config.AwsProfile);
         Assert.Equal("1M", config.BandwidthUp);
         Assert.Equal("2M", config.BandwidthDown);
+        Assert.Equal("8M", config.MultipartThreshold);
+        Assert.Equal("16M", config.MultipartPartSize);
     }
 
     [Fact]

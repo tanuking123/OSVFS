@@ -328,6 +328,45 @@ public sealed class S3BackendTests : IAsyncLifetime
         Assert.Equal(payload, roundtrip.ToArray());
     }
 
+    [Fact]
+    public async Task Upload_honors_custom_multipart_part_size()
+    {
+        // Override the per-part size to 16 MiB and push a 100 MiB payload so the
+        // multipart path must be used. The ETag should carry a 7-part suffix
+        // (7 = ceil(100/16)) because S3 multipart ETags encode the part count.
+        using var customBackend = new S3Backend(
+            bucket,
+            localStack.ServiceUrl,
+            multipartThresholdBytes: 8L * 1024 * 1024,
+            multipartPartSizeBytes: 16L * 1024 * 1024);
+
+        const int totalSize = 100 * 1024 * 1024;
+        var payload = new byte[totalSize];
+        for (var i = 0; i < payload.Length; i++)
+        {
+            payload[i] = (byte)(i & 0xFF);
+        }
+
+        using var ms = new MemoryStream(payload);
+        var result = await customBackend.UploadAsync(
+            "big/custom.bin", ms, ifMatchETag: null, CancellationToken.None);
+
+        Assert.False(string.IsNullOrEmpty(result.ETag));
+        Assert.Equal(totalSize, result.Size);
+
+        var head = await customBackend.HeadAsync("big\\custom.bin", CancellationToken.None);
+        Assert.NotNull(head);
+        Assert.Equal(totalSize, head!.Value.Size);
+
+        // ETag of a multipart-uploaded object is <hex>-<partCount>. We assert both
+        // the dash (composite ETag marker) and that the suffix matches the number of
+        // 16 MiB parts a 100 MiB payload would split into.
+        var etag = head.Value.ETag.Trim('"');
+        Assert.Contains('-', etag);
+        var partCount = etag[(etag.IndexOf('-') + 1)..];
+        Assert.Equal("7", partCount);
+    }
+
     private async Task UploadBytesAsync(string s3Key, byte[] payload)
     {
         using var ms = new MemoryStream(payload);

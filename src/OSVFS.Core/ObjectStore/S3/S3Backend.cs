@@ -21,21 +21,41 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     private const int DeleteBatchLimit = 1000;
 
     /// <summary>
-    /// Streams at or above this size are routed through TransferUtility's multipart
-    /// path. Picked to be well above the S3 5 MiB minimum part size so the multipart overhead
-    /// is worth paying.
+    /// Default for streams routed through TransferUtility's multipart path. Picked
+    /// to be well above the S3 5 MiB minimum part size so the multipart overhead
+    /// is worth paying. Used when the host does not pass an explicit override.
     /// </summary>
-    public const long MultipartThresholdBytes = 8L * 1024 * 1024;
+    public const long DefaultMultipartThresholdBytes = 8L * 1024 * 1024;
 
     /// <summary>
-    /// Per-part size for multipart uploads. Must be ≥ 5 MiB to satisfy the S3
-    /// minimum; the last part is allowed to be smaller.
+    /// Default per-part size for multipart uploads (5 MiB — the S3 minimum). Used
+    /// when the host does not pass an explicit override.
     /// </summary>
-    public const long MultipartPartSizeBytes = 5L * 1024 * 1024;
+    public const long DefaultMultipartPartSizeBytes = 5L * 1024 * 1024;
+
+    /// <summary>
+    /// Smallest per-part size accepted by S3. Parts smaller than this fail the
+    /// CompleteMultipartUpload call (the last part is exempt).
+    /// </summary>
+    public const long MinMultipartPartSizeBytes = 5L * 1024 * 1024;
+
+    /// <summary>
+    /// Largest per-part size accepted by S3. Parts above this exceed the
+    /// single-part 5 GiB ceiling.
+    /// </summary>
+    public const long MaxMultipartPartSizeBytes = 5L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// Hard cap on the number of parts a single multipart upload may have. S3
+    /// rejects uploads with more parts at CompleteMultipartUpload.
+    /// </summary>
+    public const int MaxMultipartPartCount = 10_000;
 
     private readonly string bucketName;
 
     private readonly string keyPrefix;
+
+    private readonly long multipartPartSize;
 
     private readonly AmazonS3Client client;
 
@@ -57,6 +77,8 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     /// drives request signing; <paramref name="credentials"/> short-circuits the SDK chain.
     /// <paramref name="upLimiter"/> / <paramref name="downLimiter"/> apply per-direction
     /// bandwidth ceilings; either may be null to disable that direction.
+    /// <paramref name="multipartThresholdBytes"/> / <paramref name="multipartPartSizeBytes"/>
+    /// override the multipart routing knobs; null falls back to the defaults.
     /// </summary>
     public S3Backend(
         string bucketName,
@@ -65,18 +87,22 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         string? region = null,
         AwsCredential? credentials = null,
         IRateLimiter? upLimiter = null,
-        IRateLimiter? downLimiter = null)
+        IRateLimiter? downLimiter = null,
+        long? multipartThresholdBytes = null,
+        long? multipartPartSizeBytes = null)
     {
         this.bucketName = bucketName;
         this.keyPrefix = KeyPath.NormalizeKeyPrefix(keyPrefix);
         this.upLimiter = upLimiter;
         this.downLimiter = downLimiter;
+        var threshold = multipartThresholdBytes ?? DefaultMultipartThresholdBytes;
+        multipartPartSize = multipartPartSizeBytes ?? DefaultMultipartPartSizeBytes;
         client = CreateClient(endpointUrl, region, credentials);
         // Share a single TransferUtility per backend: it's documented thread-safe, holds no
         // upload-specific state, and disposes only its internally-created client (not ours).
         transferUtility = new TransferUtility(client, new TransferUtilityConfig
         {
-            MinSizeBeforePartUpload = MultipartThresholdBytes,
+            MinSizeBeforePartUpload = threshold,
         });
     }
 
@@ -311,7 +337,7 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
             Key = key,
             InputStream = content,
             AutoCloseStream = false,
-            PartSize = MultipartPartSizeBytes,
+            PartSize = multipartPartSize,
         }, ct).ConfigureAwait(false);
 
         return new(

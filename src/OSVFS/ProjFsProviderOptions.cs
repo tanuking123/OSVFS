@@ -65,4 +65,15 @@ internal sealed class ProjFsProviderOptions
     /// "no limit on that direction".
     /// </summary>
     public BandwidthLimits BandwidthLimits { get; init; }
+
+    /// <summary>
+    /// Stream size at or above which uploads are routed through the multipart path.
+    /// Null falls back to the backend default.
+    /// </summary>
+    public long? MultipartThresholdBytes { get; init; }
+
+    /// <summary>
+    /// Per-part size used by the multipart upload path. Null falls back to the backend default.
+    /// </summary>
+    public long? MultipartPartSizeBytes { get; init; }
 }
