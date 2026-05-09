@@ -22,6 +22,8 @@ internal static class ObjectStoreBackendFactory
     /// <param name="region">Optional region / location.</param>
     /// <param name="credentials">Optional static credentials; when null the SDK's default chain is used.</param>
     /// <param name="bandwidth">Optional per-direction transfer ceilings.</param>
+    /// <param name="multipartThresholdBytes">Override for the multipart upload threshold; null uses the backend default.</param>
+    /// <param name="multipartPartSizeBytes">Override for the multipart upload part size; null uses the backend default.</param>
     public static IObjectStoreBackend Create(
         ObjectStoreProvider provider,
         string bucket,
@@ -29,14 +31,17 @@ internal static class ObjectStoreBackendFactory
         string? keyPrefix = null,
         string? region = null,
         AwsCredential? credentials = null,
-        BandwidthLimits? bandwidth = null)
+        BandwidthLimits? bandwidth = null,
+        long? multipartThresholdBytes = null,
+        long? multipartPartSizeBytes = null)
     {
         var upLimiter = CreateLimiter(bandwidth?.UpBytesPerSecond);
         var downLimiter = CreateLimiter(bandwidth?.DownBytesPerSecond);
         return provider switch
         {
             ObjectStoreProvider.S3 => new S3.S3Backend(
-                bucket, endpointUrl, keyPrefix, region, credentials, upLimiter, downLimiter),
+                bucket, endpointUrl, keyPrefix, region, credentials, upLimiter, downLimiter,
+                multipartThresholdBytes, multipartPartSizeBytes),
             ObjectStoreProvider.Gcs => DisposeAndThrow(upLimiter, downLimiter, new NotSupportedException(
                 "Google Cloud Storage backend is not yet implemented. " +
                 "Currently only --provider s3 is supported.")),

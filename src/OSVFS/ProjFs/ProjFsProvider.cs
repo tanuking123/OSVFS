@@ -63,7 +63,9 @@ internal sealed class ProjFsProvider : IRequiredCallbacks, IDisposable
             options.KeyPrefix,
             options.Region,
             options.Credentials,
-            options.BandwidthLimits);
+            options.BandwidthLimits,
+            options.MultipartThresholdBytes,
+            options.MultipartPartSizeBytes);
 
         EnsureVirtualizationRoot();
 

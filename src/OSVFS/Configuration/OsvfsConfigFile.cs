@@ -70,6 +70,18 @@ internal sealed class OsvfsConfigFile
     public string? BandwidthDown { get; init; }
 
     /// <summary>
+    /// Stream size at or above which uploads are routed through the multipart
+    /// path (e.g. <c>"16M"</c>). Null falls back to the backend default.
+    /// </summary>
+    public string? MultipartThreshold { get; init; }
+
+    /// <summary>
+    /// Per-part size used by multipart uploads (e.g. <c>"16M"</c>). Null falls
+    /// back to the backend default.
+    /// </summary>
+    public string? MultipartPartSize { get; init; }
+
+    /// <summary>
     /// Returns a copy of this config with values from <paramref name="overlay"/> taking
     /// precedence wherever they are non-null. Used to fold the project-local
     /// <c>osvfs.toml</c> on top of the user-global <c>%APPDATA%/OSVFS/config.toml</c>.
@@ -88,5 +100,7 @@ internal sealed class OsvfsConfigFile
         AwsProfile = overlay.AwsProfile ?? AwsProfile,
         BandwidthUp = overlay.BandwidthUp ?? BandwidthUp,
         BandwidthDown = overlay.BandwidthDown ?? BandwidthDown,
+        MultipartThreshold = overlay.MultipartThreshold ?? MultipartThreshold,
+        MultipartPartSize = overlay.MultipartPartSize ?? MultipartPartSize,
     };
 }

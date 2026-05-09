@@ -120,6 +120,8 @@ Open `C:\Users\you\OSVFS` in Explorer and the bucket contents appear.
 | `--sync-interval-seconds` | Polling interval for detecting external object-store changes; `0` disables | `30` |
 | `--bandwidth-up` | Upload bandwidth ceiling. Plain bytes/s by default; suffixes `K`/`M`/`G` mean KiB/s, MiB/s, GiB/s (e.g. `5M` = 5 MiB/s). Omit or set to `0` to disable. | — (unlimited) |
 | `--bandwidth-down` | Download bandwidth ceiling. Same format as `--bandwidth-up`. | — (unlimited) |
+| `--multipart-threshold` | Stream size at or above which uploads are routed through the multipart path. Same K/M/G suffixes as `--bandwidth-up`. | `8M` |
+| `--multipart-part-size` | Per-part size used by multipart uploads. Must be between `5M` and `5G`. | `5M` |
 | `--verbose` | Enable debug-level logging | off |
 
 To project only a sub-tree of a bucket — for example `s3://my-bucket/team-a/` —
@@ -150,6 +152,33 @@ leaves that direction unlimited. The limit is enforced through a token
 bucket on the upload payload stream and the download response stream, so
 `TransferUtility`'s multipart workers and the on-demand hydration path are
 both paced by the same ceiling.
+
+### Tuning multipart uploads
+
+`osvfs` routes any upload at or above `--multipart-threshold` through the
+S3 multipart path, splitting the payload into `--multipart-part-size`
+chunks that `TransferUtility` uploads in parallel. The defaults (8 MiB
+threshold, 5 MiB parts) target a typical office connection, but two
+common scenarios benefit from explicit tuning:
+
+| Scenario | Suggested settings | Why |
+| --- | --- | --- |
+| Fat links / large files | `--multipart-threshold 64M --multipart-part-size 64M` | Larger parts amortize per-request overhead and cut the part count on multi-GiB files. |
+| Many tiny edits | `--multipart-threshold 16M` (keep 5M parts) | Skips multipart for small files where a single PUT is faster than negotiating an upload session. |
+| Constrained networks | Keep defaults | Smaller parts mean a network blip retries less data. |
+
+S3 enforces three hard limits on the part size — you must stay inside
+all of them or `osvfs` refuses to start, and the service rejects the
+upload at completion time:
+
+- `--multipart-part-size` must be **≥ 5 MiB** (`5M`). Smaller parts are
+  rejected by S3 except for the last part of an upload.
+- `--multipart-part-size` must be **≤ 5 GiB** (`5G`). Larger parts
+  exceed the per-part ceiling.
+- A single multipart upload is capped at **10 000 parts**, so the
+  largest object you can upload is `part-size × 10 000` (16 MiB parts
+  → 160 GiB max; 64 MiB parts → 640 GiB max). Pick a part size large
+  enough to fit your largest expected file.
 
 ### Sync interval for large buckets
 
@@ -196,6 +225,8 @@ prefix               = "team-a/"                 # optional
 aws-profile          = "prod"                    # optional
 bandwidth-up         = "5M"                      # optional, "0" / omit = unlimited
 bandwidth-down       = "10M"                     # optional, "0" / omit = unlimited
+multipart-threshold  = "8M"                      # optional
+multipart-part-size  = "16M"                     # optional, 5M..5G
 verbose              = false
 sync-interval-seconds = 30
 ```
@@ -304,9 +335,10 @@ Roughly:
 - [`S3Backend`](src/OSVFS.Core/ObjectStore/S3/S3Backend.cs) wraps AWSSDK.S3
   behind the provider-neutral [`IObjectStoreBackend`](src/OSVFS.Core/ObjectStore/IObjectStoreBackend.cs)
   with the small, ProjFS-shaped surface the provider needs (list, head,
-  range read, upload, delete, rename-by-copy). Uploads above 8 MiB are routed
-  through `TransferUtility` so large files are split into 5 MiB parts and
-  uploaded in parallel. It lives in a cross-platform Core library so
+  range read, upload, delete, rename-by-copy). Uploads at or above the
+  configured `--multipart-threshold` (default 8 MiB) are routed through
+  `TransferUtility` so large files are split into `--multipart-part-size`
+  chunks (default 5 MiB) and uploaded in parallel. It lives in a cross-platform Core library so
   integration tests can run against LocalStack on Linux without pulling in
   the Windows-only ProjFS bindings. When `--prefix` is set, the backend
   transparently rewrites virtualization-root-relative paths into the

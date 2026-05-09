@@ -120,6 +120,8 @@ internal static class OsvfsConfigFileLoader
             AwsProfile = ReadString(table, "aws-profile", "aws_profile", sourcePath),
             BandwidthUp = ReadString(table, "bandwidth-up", "bandwidth_up", sourcePath),
             BandwidthDown = ReadString(table, "bandwidth-down", "bandwidth_down", sourcePath),
+            MultipartThreshold = ReadString(table, "multipart-threshold", "multipart_threshold", sourcePath),
+            MultipartPartSize = ReadString(table, "multipart-part-size", "multipart_part_size", sourcePath),
         };
     }
 

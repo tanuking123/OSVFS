@@ -71,6 +71,16 @@ var bandwidthDownOption = new Option<string?>("--bandwidth-down")
     Description = "Download bandwidth ceiling. Plain bytes/s by default; suffixes K/M/G mean KiB/s, MiB/s, GiB/s (e.g. '10M' = 10 MiB/s). Omit or set to 0 to disable.",
 };
 
+var multipartThresholdOption = new Option<string?>("--multipart-threshold")
+{
+    Description = "Stream size at or above which uploads are routed through the multipart path. Same K/M/G suffixes as --bandwidth-up. Defaults to 8M.",
+};
+
+var multipartPartSizeOption = new Option<string?>("--multipart-part-size")
+{
+    Description = "Per-part size used by multipart uploads. Must be between 5M and 5G; the last part may be smaller. Defaults to 5M.",
+};
+
 var credentialStore = new WindowsCredentialStore();
 
 var rootCommand = new RootCommand("OSVFS — Object Storage Virtual File System for Windows: mount a cloud object-store bucket/container as a local folder via ProjFS.")
@@ -87,6 +97,8 @@ var rootCommand = new RootCommand("OSVFS — Object Storage Virtual File System 
     awsProfileOption,
     bandwidthUpOption,
     bandwidthDownOption,
+    multipartThresholdOption,
+    multipartPartSizeOption,
 };
 
 rootCommand.Subcommands.Add(CredentialsCommandFactory.Build(credentialStore));
@@ -145,6 +157,8 @@ rootCommand.SetAction(parseResult =>
     }
 
     BandwidthLimits bandwidthLimits;
+    long? multipartThresholdBytes;
+    long? multipartPartSizeBytes;
     try
     {
         bandwidthLimits = new BandwidthLimits(
@@ -152,10 +166,21 @@ rootCommand.SetAction(parseResult =>
                 parseResult.GetValue(bandwidthUpOption) ?? fileConfig?.BandwidthUp),
             DownBytesPerSecond: BandwidthSize.Parse(
                 parseResult.GetValue(bandwidthDownOption) ?? fileConfig?.BandwidthDown));
+
+        multipartThresholdBytes = BandwidthSize.Parse(
+            parseResult.GetValue(multipartThresholdOption) ?? fileConfig?.MultipartThreshold);
+        multipartPartSizeBytes = BandwidthSize.Parse(
+            parseResult.GetValue(multipartPartSizeOption) ?? fileConfig?.MultipartPartSize);
     }
     catch (FormatException ex)
     {
         logger.LogError("{Message}", ex.Message);
+        return ExitGeneralException;
+    }
+
+    if (MultipartSettingsValidator.Validate(multipartThresholdBytes, multipartPartSizeBytes) is { } error)
+    {
+        logger.LogError("{Message}", error);
         return ExitGeneralException;
     }
 
@@ -172,6 +197,8 @@ rootCommand.SetAction(parseResult =>
         SyncIntervalSeconds = parseResult.GetValue(syncIntervalOption) ?? fileConfig?.SyncIntervalSeconds ?? 30,
         Credentials = credentials,
         BandwidthLimits = bandwidthLimits,
+        MultipartThresholdBytes = multipartThresholdBytes,
+        MultipartPartSizeBytes = multipartPartSizeBytes,
     };
 
     try
