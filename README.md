@@ -382,6 +382,40 @@ line):
 }
 ```
 
+### User-defined object metadata round-trip
+
+S3 lets every object carry an arbitrary number of user-defined headers (the
+`x-amz-meta-*` family) — for example a `tag`, an `author`, or any
+application-specific marker the upload tool wrote. OSVFS preserves these
+headers across hydration and re-upload so a local edit doesn't strip them.
+
+When a placeholder is created, OSVFS reads the bucket-side user metadata via
+`HeadObject` and mirrors every entry into a Windows NTFS **alternate data
+stream** named `:osvfs-user-meta` attached to the placeholder. The stream is
+plain UTF-8 with one `key=value` pair per line. Names are normalized to
+lowercase (matching the case S3 uses on the wire).
+
+When a local edit is uploaded, OSVFS reads the same ADS back out and
+reattaches every entry as `x-amz-meta-*` on the `PutObject` (or multipart)
+request, so the headers survive the local edit cycle bit-for-bit. Newly
+created local files have no stream attached and upload with no user
+metadata, exactly as before.
+
+You can inspect the mirrored metadata from PowerShell:
+
+```powershell
+# List streams attached to a hydrated placeholder
+Get-Item C:\Users\you\OSVFS\meta\file.txt -Stream *
+
+# Dump the metadata (UTF-8, one key=value per line)
+Get-Content C:\Users\you\OSVFS\meta\file.txt -Stream osvfs-user-meta
+```
+
+AWS limits the combined `x-amz-meta-*` name+value byte count to **2 KiB per
+object**. OSVFS pre-validates uploads against the same limit and surfaces a
+clear error before the network round-trip, instead of forwarding an
+oversized request that S3 would reject with an opaque 400.
+
 ### Configuration file
 
 Every option that can be passed to the root `osvfs` command can also be set

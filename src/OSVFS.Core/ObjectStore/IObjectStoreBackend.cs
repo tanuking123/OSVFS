@@ -51,8 +51,16 @@ internal interface IObjectStoreBackend : IDisposable
     /// <paramref name="ifMatchETag"/> is supplied the upload uses an If-Match precondition
     /// to fail on stale local copies; otherwise the implementation chooses the
     /// most efficient transport (single PUT / multipart / resumable / block blob).
+    /// <paramref name="userMetadata"/>, when non-null, is forwarded as provider-native
+    /// user metadata (S3 <c>x-amz-meta-*</c>). Names are normalized to lowercase before
+    /// transmission and the combined size is validated against the provider limit.
     /// </summary>
-    Task<UploadResult> UploadAsync(string relativePath, Stream content, string? ifMatchETag, CancellationToken ct);
+    Task<UploadResult> UploadAsync(
+        string relativePath,
+        Stream content,
+        string? ifMatchETag,
+        CancellationToken ct,
+        IReadOnlyDictionary<string, string>? userMetadata = null);
 
     /// <summary>
     /// Deletes a single object. Missing keys are treated as success.

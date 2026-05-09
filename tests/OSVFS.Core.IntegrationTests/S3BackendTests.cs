@@ -298,6 +298,114 @@ public sealed class S3BackendTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Upload_round_trips_user_metadata_via_Head()
+    {
+        // Issue #19: x-amz-meta-* round-trip. UploadAsync should reattach the same
+        // user metadata that HeadAsync surfaces back to the caller.
+        var metadata = new Dictionary<string, string>
+        {
+            ["tag"] = "hello",
+            ["author"] = "alice",
+        };
+
+        using var ms = new MemoryStream("payload"u8.ToArray());
+        await backend.UploadAsync(
+            "meta/file.txt",
+            ms,
+            ifMatchETag: null,
+            CancellationToken.None,
+            userMetadata: metadata);
+
+        var head = await backend.HeadAsync("meta\\file.txt", CancellationToken.None);
+        Assert.NotNull(head);
+        Assert.NotNull(head!.Value.UserMetadata);
+        Assert.Equal("hello", head.Value.UserMetadata!["tag"]);
+        Assert.Equal("alice", head.Value.UserMetadata["author"]);
+    }
+
+    [Fact]
+    public async Task Upload_then_re_upload_preserves_user_metadata_round_trip()
+    {
+        // Mirrors the issue's full round-trip: download → re-upload (passing the
+        // same metadata dictionary back) preserves every header.
+        var initial = new Dictionary<string, string>
+        {
+            ["tag"] = "alpha",
+            ["env"] = "prod",
+        };
+
+        using (var ms = new MemoryStream("v1"u8.ToArray()))
+        {
+            await backend.UploadAsync(
+                "meta/loop.txt", ms, ifMatchETag: null, CancellationToken.None,
+                userMetadata: initial);
+        }
+
+        var firstHead = await backend.HeadAsync("meta\\loop.txt", CancellationToken.None);
+        Assert.NotNull(firstHead);
+        var recovered = firstHead!.Value.UserMetadata;
+        Assert.NotNull(recovered);
+
+        using (var ms2 = new MemoryStream("v2"u8.ToArray()))
+        {
+            await backend.UploadAsync(
+                "meta/loop.txt", ms2, ifMatchETag: null, CancellationToken.None,
+                userMetadata: recovered);
+        }
+
+        var secondHead = await backend.HeadAsync("meta\\loop.txt", CancellationToken.None);
+        Assert.NotNull(secondHead);
+        var afterRoundTrip = secondHead!.Value.UserMetadata;
+        Assert.NotNull(afterRoundTrip);
+        Assert.Equal("alpha", afterRoundTrip!["tag"]);
+        Assert.Equal("prod", afterRoundTrip["env"]);
+    }
+
+    [Fact]
+    public async Task Upload_normalizes_user_metadata_keys_to_lowercase()
+    {
+        // S3 lowercases header names on the wire; the backend should pre-normalize
+        // so the local snapshot matches what comes back on HeadAsync.
+        var metadata = new Dictionary<string, string>
+        {
+            ["MixedCase"] = "value",
+            ["UPPER"] = "loud",
+        };
+
+        using var ms = new MemoryStream("body"u8.ToArray());
+        await backend.UploadAsync(
+            "meta/case.txt", ms, ifMatchETag: null, CancellationToken.None,
+            userMetadata: metadata);
+
+        var head = await backend.HeadAsync("meta\\case.txt", CancellationToken.None);
+        Assert.NotNull(head);
+        Assert.NotNull(head!.Value.UserMetadata);
+        Assert.True(head.Value.UserMetadata!.ContainsKey("mixedcase"));
+        Assert.True(head.Value.UserMetadata.ContainsKey("upper"));
+        Assert.Equal("value", head.Value.UserMetadata["mixedcase"]);
+    }
+
+    [Fact]
+    public async Task Upload_rejects_user_metadata_above_2KiB_limit()
+    {
+        // Construct a payload whose combined name+value byte count exceeds the
+        // AWS-documented 2 KiB cap. The backend should fail fast instead of
+        // forwarding the request to S3.
+        var oversized = new Dictionary<string, string>
+        {
+            [new string('k', 1024)] = new string('v', 1025),
+        };
+
+        using var ms = new MemoryStream("data"u8.ToArray());
+        await Assert.ThrowsAsync<UserMetadataTooLargeException>(async () =>
+        {
+            await backend.UploadAsync(
+                "meta/oversized.txt", ms, ifMatchETag: null, CancellationToken.None,
+                userMetadata: oversized);
+        });
+    }
+
+    [Fact]
     public async Task Upload_uses_multipart_for_streams_above_threshold()
     {
         // 12 MiB is above the 8 MiB multipart threshold and exercises the part-loop path

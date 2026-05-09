@@ -360,7 +360,7 @@ public sealed class OnDemandPollingChangeSourceTests
             throw new NotImplementedException();
         public Task ReadRangeAsync(string r, long o, long l, Stream d, CancellationToken c) =>
             throw new NotImplementedException();
-        public Task<UploadResult> UploadAsync(string r, Stream s, string? e, CancellationToken c) =>
+        public Task<UploadResult> UploadAsync(string r, Stream s, string? e, CancellationToken c, IReadOnlyDictionary<string, string>? m = null) =>
             throw new NotImplementedException();
         public Task DeleteAsync(string r, CancellationToken c) =>
             throw new NotImplementedException();

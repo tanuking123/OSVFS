@@ -11,10 +11,12 @@ namespace OSVFS.ObjectStore;
 /// <param name="LastModified">Last-modified timestamp; default for synthesized directories.</param>
 /// <param name="ETag">Provider-supplied entity tag (HTTP ETag style; surrounding quotes preserved when present); empty for directories.</param>
 /// <param name="IsDirectory">True when the entry represents a common prefix rather than a real object.</param>
+/// <param name="UserMetadata">User-defined metadata (S3 <c>x-amz-meta-*</c> headers) keyed by lowercased name without the provider prefix; null when unknown (e.g. List responses) or absent.</param>
 internal readonly record struct ObjectInfo(
     string Key,
     string RelativePath,
     long Size,
     DateTimeOffset LastModified,
     string ETag,
-    bool IsDirectory);
+    bool IsDirectory,
+    IReadOnlyDictionary<string, string>? UserMetadata = null);

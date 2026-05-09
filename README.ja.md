@@ -393,6 +393,40 @@ osvfs --bucket my-bucket --root-folder C:\Users\you\OSVFS --log-format json
 }
 ```
 
+### ユーザー定義オブジェクトメタデータの往復保持
+
+S3 のオブジェクトはユーザー定義ヘッダー (`x-amz-meta-*`) を任意個持てます。
+タグや作者名、アプリ固有のマーカーなどがその例です。OSVFS はこれらの
+ヘッダーを hydrate と再アップロードを跨いで保持し、ローカル編集によって
+失われないようにします。
+
+プレースホルダー作成時、OSVFS は `HeadObject` でバケット側のユーザー
+メタデータを取得し、各エントリを `:osvfs-user-meta` という Windows NTFS の
+**代替データストリーム (ADS)** にミラーします。フォーマットは UTF-8 で
+1 行あたり `key=value` のプレーンテキストです。キーは S3 の wire と同じく
+小文字に正規化されます。
+
+ローカル編集をアップロードする際、OSVFS は同じ ADS を読み戻し、
+`PutObject` (またはマルチパート) リクエストに `x-amz-meta-*` として
+そのまま添付します。これによりローカル編集サイクル前後でヘッダーが
+ビット単位で保たれます。新規作成のローカルファイルにはストリームが
+存在しないため、従来どおりユーザーメタデータなしでアップロードされます。
+
+ミラーされたメタデータは PowerShell から確認できます。
+
+```powershell
+# プレースホルダーに付与されたストリームを一覧
+Get-Item C:\Users\you\OSVFS\meta\file.txt -Stream *
+
+# メタデータを表示 (UTF-8、1 行 1 key=value)
+Get-Content C:\Users\you\OSVFS\meta\file.txt -Stream osvfs-user-meta
+```
+
+AWS は `x-amz-meta-*` の合計サイズを **1 オブジェクトあたり 2 KiB** に
+制限しています。OSVFS は同じ上限でアップロード前に検証を行い、ネットワーク
+往復を待たず即座にエラーを返します。S3 が不透明な 400 を返すのを待つ
+必要はありません。
+
 ### 設定ファイル
 
 ルートコマンド `osvfs` に渡せるすべてのオプションは TOML 設定ファイルから
