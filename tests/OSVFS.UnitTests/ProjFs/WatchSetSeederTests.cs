@@ -205,5 +205,7 @@ public sealed class WatchSetSeederTests
     private sealed class NoopQuarantine : ILostAndFoundQuarantine
     {
         public bool TryQuarantine(string relativePath) => true;
+
+        public IReadOnlyList<QuarantineEntry> List() => Array.Empty<QuarantineEntry>();
     }
 }

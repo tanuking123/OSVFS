@@ -145,7 +145,7 @@ exposes just three things:
 
 | Surface | Purpose |
 | --- | --- |
-| Sub-commands (`mount`, `mount-all`, `credentials`, `doctor`) | Pick which mount(s) to start, manage the encrypted credential store, or run the environment self-check. |
+| Sub-commands (`mount`, `mount-all`, `credentials`, `doctor`, `lost-and-found`) | Pick which mount(s) to start, manage the encrypted credential store, run the environment self-check, or recover quarantined files. |
 | `--name <mount>` | Selects an entry from the `[[mount]]` array on `osvfs mount`. |
 | `--verbose`, `--log-format` | Process-level overrides for one-off debugging. The TOML keys (`verbose`, `log-format`) are still honoured; the CLI flags simply win when both are present. |
 
@@ -790,6 +790,39 @@ osvfs mount-all
 
 `NO_COLOR=1` and redirected stdout disable the ANSI escape codes so the
 output stays clean for log shippers and CI.
+
+### Recovering quarantined files (`lost-and-found`)
+
+When a remote change collides with an unsynced local edit, the watcher
+copies the dirty local file into the mount's `.osvfs-lost+found`
+directory before overwriting it with the remote (authoritative) version.
+The `osvfs lost-and-found` sub-command lets you inspect and recover
+those copies without leaving the shell:
+
+```powershell
+# Show every quarantined file (newest first), with the original path and size
+osvfs lost-and-found list
+
+# When osvfs.toml defines several mounts, pick one by --name
+osvfs lost-and-found list --name docs
+
+# Diff a quarantined copy against the current remote object.
+# Text files: external `git diff --no-index --color`.
+# Binary files (NUL byte in the first 8 KiB): SHA-256 + size summary.
+osvfs lost-and-found diff 20260510T123456789Z_docs%2Fnotes.md
+
+# Copy a quarantined file back out to a chosen path
+# (default: ./<original-basename> in the current working directory)
+osvfs lost-and-found restore 20260510T123456789Z_docs%2Fnotes.md `
+  --target C:\Users\you\Desktop\notes-recovered.md
+```
+
+The first column from `list` (`FILENAME`) is the identifier consumed by
+`diff` and `restore`; copy-paste it verbatim. The filename encoding is
+`<UTC timestamp>_<URL-escaped original path>`, so `list` always prints
+the decoded `ORIGINAL-PATH` alongside it. `restore` refuses to clobber an
+existing destination unless you pass `--force`. `diff` requires `git` on
+`PATH`; without it the command falls back to the binary summary.
 
 ## Architecture
 

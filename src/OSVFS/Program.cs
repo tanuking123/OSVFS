@@ -5,6 +5,7 @@ using OSVFS.Configuration;
 using OSVFS.Credentials;
 using OSVFS.Diagnostics;
 using OSVFS.Logging;
+using OSVFS.LostAndFound;
 using OSVFS.Notifications;
 using OSVFS.ProjFs;
 
@@ -24,6 +25,7 @@ rootCommand.Subcommands.Add(CredentialsCommandFactory.Build(credentialStore));
 rootCommand.Subcommands.Add(MountCommandFactory.BuildMountCommand(credentialStore, cliOptions));
 rootCommand.Subcommands.Add(MountCommandFactory.BuildMountAllCommand(credentialStore, cliOptions));
 rootCommand.Subcommands.Add(DoctorCommandFactory.Build(credentialStore, cliOptions));
+rootCommand.Subcommands.Add(LostAndFoundCommandFactory.Build(credentialStore, cliOptions));
 
 rootCommand.SetAction(parseResult =>
 {

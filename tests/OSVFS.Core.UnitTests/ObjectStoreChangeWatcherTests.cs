@@ -343,6 +343,8 @@ public sealed class ObjectStoreChangeWatcherTests
             Quarantined.Add(relativePath);
             return Result;
         }
+
+        public IReadOnlyList<QuarantineEntry> List() => Array.Empty<QuarantineEntry>();
     }
 
     private sealed class Disposable : IDisposable

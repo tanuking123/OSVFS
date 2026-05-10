@@ -18,6 +18,12 @@ internal sealed class LostAndFoundQuarantine(
         Path.Combine(syncRootPath, ObjectStoreChangeWatcher.LostAndFoundDirectoryName);
     private readonly string syncRootPath = syncRootPath;
 
+    /// <summary>
+    /// Returns the absolute path to the lost+found directory backing this quarantine.
+    /// Used by the CLI <c>lost-and-found</c> subcommand to read entry contents.
+    /// </summary>
+    public string Directory => lostAndFoundDir;
+
     /// <inheritdoc/>
     public bool TryQuarantine(string relativePath)
     {
@@ -33,14 +39,17 @@ internal sealed class LostAndFoundQuarantine(
 
         try
         {
-            Directory.CreateDirectory(lostAndFoundDir);
+            System.IO.Directory.CreateDirectory(lostAndFoundDir);
 
             // Per the spec, the lost+found name is prefixed with an identifier so successive
             // versions of the same path don't collide. We use a UTC timestamp; if that still
             // collides (unlikely sub-millisecond), fall back to a random suffix.
             var stamp = DateTimeOffset.UtcNow.ToString(
                 "yyyyMMddTHHmmssfffZ", CultureInfo.InvariantCulture);
-            var safeName = relativePath.Replace('\\', '_').Replace('/', '_');
+
+            // URL-encoding makes the filename reversible (List() can recover the original
+            // virt-root-relative path) while still being filename-safe on NTFS.
+            var safeName = Uri.EscapeDataString(relativePath.Replace('\\', '/'));
             var destination = Path.Combine(lostAndFoundDir, $"{stamp}_{safeName}");
             if (File.Exists(destination))
             {
@@ -78,5 +87,37 @@ internal sealed class LostAndFoundQuarantine(
             logger.LogError(ex, "Failed to quarantine {Path}.", relativePath);
             return false;
         }
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<QuarantineEntry> List()
+    {
+        if (!System.IO.Directory.Exists(lostAndFoundDir))
+        {
+            return Array.Empty<QuarantineEntry>();
+        }
+
+        var entries = new List<QuarantineEntry>();
+        foreach (var path in System.IO.Directory.EnumerateFiles(
+                     lostAndFoundDir, "*", SearchOption.TopDirectoryOnly))
+        {
+            var fileName = Path.GetFileName(path);
+            FileInfo info;
+            try
+            {
+                info = new FileInfo(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            if (QuarantineEntry.TryParse(fileName, info.Length, out var entry) && entry is not null)
+            {
+                entries.Add(entry);
+            }
+        }
+        entries.Sort(static (a, b) => b.QuarantinedAt.CompareTo(a.QuarantinedAt));
+        return entries;
     }
 }
