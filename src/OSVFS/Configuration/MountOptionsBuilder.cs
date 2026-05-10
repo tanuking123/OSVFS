@@ -26,8 +26,9 @@ internal static class MountOptionsBuilder
     public static ProjFsProviderOptions Build(
         OsvfsMountConfig mount,
         IAwsCredentialStore credentialStore,
-        ILogger logger) =>
-        Build(mount, credentialStore, DefaultSharedProfileResolver.Instance, logger);
+        ILogger logger,
+        ICredentialRefreshNotifier? refreshNotifier = null) =>
+        Build(mount, credentialStore, DefaultSharedProfileResolver.Instance, logger, refreshNotifier);
 
     /// <summary>
     /// Test-friendly overload that lets callers swap out the SDK shared-profile
@@ -37,7 +38,8 @@ internal static class MountOptionsBuilder
         OsvfsMountConfig mount,
         IAwsCredentialStore credentialStore,
         ISharedProfileResolver sharedProfileResolver,
-        ILogger logger)
+        ILogger logger,
+        ICredentialRefreshNotifier? refreshNotifier = null)
     {
         if (string.IsNullOrEmpty(mount.Bucket))
         {
@@ -114,6 +116,7 @@ internal static class MountOptionsBuilder
             MultipartPartSizeBytes = multipartPartSizeBytes,
             RetryMaxAttempts = mount.RetryMaxAttempts,
             AllowUnversioned = mount.AllowUnversioned ?? false,
+            RefreshNotifier = refreshNotifier,
         };
     }
 
@@ -123,8 +126,9 @@ internal static class MountOptionsBuilder
     ///    <c>osvfs credentials set</c>).
     /// 2. The shared AWS profile store via <paramref name="sharedProfileResolver"/>
     ///    (covers static keys in <c>~/.aws/credentials</c>, <c>credential_process</c>
-    ///    profiles produced by <c>aws login</c>, <c>sso_session</c> /
-    ///    <c>login_session</c> profiles, and assume-role chains).
+    ///    profiles produced by <c>aws login</c>, <c>sso_session</c> profiles
+    ///    written by <c>aws configure sso</c>, and assume-role chains). The SDK
+    ///    handles refresh for these natively.
     /// Both misses are reported as a single <see cref="OsvfsConfigException"/> so
     /// multi-mount runs surface which entry blew up.
     /// </summary>
@@ -159,6 +163,7 @@ internal static class MountOptionsBuilder
             "credential store or in the shared AWS profile store (~/.aws/config, " +
             "~/.aws/credentials). Run 'osvfs credentials set --profile <name>' to create an " +
             "OSVFS-managed entry, or configure the profile in the shared AWS files (e.g. via " +
+            "'aws configure sso --profile <name>' for IAM Identity Center, or " +
             "'aws login --profile <name>' for AWS CLI 2.32+).");
     }
 }

@@ -1,7 +1,6 @@
 using System.CommandLine;
 using System.Runtime.Versioning;
 using System.Text;
-using OSVFS.Credentials.Sso;
 using OSVFS.ObjectStore;
 
 namespace OSVFS.Credentials;
@@ -15,39 +14,22 @@ internal static class CredentialsCommandFactory
 {
     /// <summary>
     /// Constructs the <c>credentials</c> sub-command and its <c>set/get/list/remove</c> children.
+    /// IAM Identity Center (SSO) and `aws login` flows are handled directly by the AWS CLI;
+    /// OSVFS picks up the resulting profiles via the SDK shared-profile chain.
     /// </summary>
-    public static Command Build(IAwsCredentialStore store) => Build(store, DefaultSsoServiceFactory);
-
-    /// <summary>
-    /// Constructs the <c>credentials</c> sub-command with an injectable SSO-service factory
-    /// so tests can drive the <c>sso</c> subcommand without touching real AWS endpoints.
-    /// </summary>
-    internal static Command Build(IAwsCredentialStore store, Func<SsoLoginParameters, TextWriter, SsoLoginService> ssoFactory)
+    public static Command Build(IAwsCredentialStore store)
     {
         var credentials = new Command(
             "credentials",
-            "Manage AWS credentials encrypted with DPAPI and stored in Windows Credential Manager.");
+            "Manage AWS credentials encrypted with DPAPI and stored in Windows Credential Manager. " +
+            "For IAM Identity Center / SSO use 'aws configure sso' and reference the profile " +
+            "from osvfs.toml; OSVFS resolves it through the SDK shared-profile chain.");
 
         credentials.Subcommands.Add(BuildSetCommand(store));
         credentials.Subcommands.Add(BuildGetCommand(store));
         credentials.Subcommands.Add(BuildRemoveCommand(store));
         credentials.Subcommands.Add(BuildListCommand(store));
-        credentials.Subcommands.Add(BuildSsoCommand(ssoFactory));
         return credentials;
-    }
-
-    /// <summary>
-    /// Default factory used in production: wires the real SDK-backed flow client,
-    /// the Windows-Cred-Manager token cache, and the system browser launcher.
-    /// </summary>
-    private static SsoLoginService DefaultSsoServiceFactory(SsoLoginParameters parameters, TextWriter output)
-    {
-        var flowClient = new AwsSsoFlowClient(parameters.Region, TimeProvider.System);
-        var tokenCache = new WindowsSsoTokenCache();
-        var credentialStore = new WindowsCredentialStore();
-        var browserLauncher = new DefaultBrowserLauncher();
-        return new SsoLoginService(
-            flowClient, tokenCache, credentialStore, browserLauncher, TimeProvider.System, output);
     }
 
     /// <summary>
@@ -145,6 +127,8 @@ internal static class CredentialsCommandFactory
             Console.WriteLine($"SecretAccessKey:  (hidden, {credential.SecretAccessKey.Length} chars)");
             Console.WriteLine(
                 $"SessionToken:     {(string.IsNullOrEmpty(credential.SessionToken) ? "(none)" : "(present)")}");
+            Console.WriteLine(
+                $"ExpiresAt:        {(credential.ExpiresAt is { } e ? e.ToString("u") : "(none)")}");
             return 0;
         });
         return command;
@@ -199,96 +183,6 @@ internal static class CredentialsCommandFactory
             return 0;
         });
         return command;
-    }
-
-    /// <summary>
-    /// Builds <c>credentials sso --start-url ... --region ... --account-id ... --role-name ... --profile ...</c>
-    /// which runs the IAM Identity Center device-authorization flow, opens the browser
-    /// to approve the request, and saves the resulting role credentials under the
-    /// requested local profile.
-    /// </summary>
-    private static Command BuildSsoCommand(Func<SsoLoginParameters, TextWriter, SsoLoginService> ssoFactory)
-    {
-        var startUrl = new Option<string>("--start-url")
-        {
-            Description = "IAM Identity Center user-portal start URL (e.g. https://my-org.awsapps.com/start).",
-            Required = true,
-        };
-        var region = new Option<string>("--region")
-        {
-            Description = "AWS region that hosts the IAM Identity Center instance.",
-            Required = true,
-        };
-        var accountId = new Option<string>("--account-id")
-        {
-            Description = "AWS account ID to retrieve role credentials for.",
-            Required = true,
-        };
-        var roleName = new Option<string>("--role-name")
-        {
-            Description = "Permission-set role name to assume in the target account.",
-            Required = true,
-        };
-        var profile = new Option<string>("--profile")
-        {
-            Description = "Local OSVFS profile name to save the resulting role credentials under.",
-            Required = true,
-        };
-
-        var command = new Command(
-            "sso",
-            "Sign in via AWS IAM Identity Center (SSO) and store the resulting role credentials.")
-        {
-            startUrl,
-            region,
-            accountId,
-            roleName,
-            profile,
-        };
-        command.SetAction((parseResult, cancellationToken) =>
-        {
-            var parameters = new SsoLoginParameters
-            {
-                StartUrl = parseResult.GetValue(startUrl)!,
-                Region = parseResult.GetValue(region)!,
-                AccountId = parseResult.GetValue(accountId)!,
-                RoleName = parseResult.GetValue(roleName)!,
-                ProfileName = parseResult.GetValue(profile)!,
-            };
-
-            var service = ssoFactory(parameters, Console.Out);
-            return RunSsoLoginAsync(service, parameters, cancellationToken);
-        });
-        return command;
-    }
-
-    /// <summary>
-    /// Awaits the SSO login flow and translates known failure modes into terse stderr
-    /// messages plus a non-zero exit code.
-    /// </summary>
-    private static async Task<int> RunSsoLoginAsync(
-        SsoLoginService service, SsoLoginParameters parameters, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await service.LoginAsync(parameters, cancellationToken).ConfigureAwait(false);
-            return 0;
-        }
-        catch (SsoExpiredTokenException ex)
-        {
-            Console.Error.WriteLine(ex.Message);
-            return 1;
-        }
-        catch (SsoLoginException ex)
-        {
-            Console.Error.WriteLine(ex.Message);
-            return 1;
-        }
-        catch (OperationCanceledException)
-        {
-            Console.Error.WriteLine("SSO login cancelled.");
-            return 1;
-        }
     }
 
     /// <summary>

@@ -157,6 +157,27 @@ public sealed class WindowsCredentialStoreTests : IDisposable
     }
 
     [Fact]
+    public void Save_then_Load_roundtrips_ExpiresAt()
+    {
+        var profile = NewProfile();
+        // The on-disk JSON layer uses Unix seconds, so anchor to a precise
+        // second to avoid sub-second roundtrip drift in the assert.
+        var when_ = DateTimeOffset.FromUnixTimeSeconds(1_900_000_000);
+        store.Save(profile, new AwsCredential
+        {
+            AccessKeyId = "ASIATEMP",
+            SecretAccessKey = "secret-temp",
+            SessionToken = "session-temp",
+            ExpiresAt = when_,
+        });
+
+        var loaded = store.Load(profile);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(when_, loaded.ExpiresAt);
+    }
+
+    [Fact]
     public void Save_rejects_credential_with_empty_secret()
     {
         Assert.ThrowsAny<ArgumentException>(() => store.Save(

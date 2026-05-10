@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using OSVFS.Configuration;
 using OSVFS.Credentials;
 using OSVFS.Logging;
+using OSVFS.Notifications;
 using OSVFS.ProjFs;
 using System.CommandLine;
 
@@ -94,6 +95,8 @@ internal static class MountCommandFactory
 
         using var loggerFactory = LogConsoleFactory.Create(verbose, logFormat);
         var logger = loggerFactory.CreateLogger("OSVFS");
+        using var refreshNotifier = new WindowsBalloonTipNotifier(
+            loggerFactory.CreateLogger<WindowsBalloonTipNotifier>());
 
         var requestedName = parseResult.GetValue(nameOption);
         var mountConfig = SelectMount(fileConfig, requestedName, logger);
@@ -102,7 +105,7 @@ internal static class MountCommandFactory
         ProjFsProviderOptions options;
         try
         {
-            options = MountOptionsBuilder.Build(mountConfig, credentialStore, logger);
+            options = MountOptionsBuilder.Build(mountConfig, credentialStore, logger, refreshNotifier);
         }
         catch (OsvfsConfigException ex)
         {
@@ -153,6 +156,8 @@ internal static class MountCommandFactory
         var logFormat = parseResult.GetValue(cliOptions.LogFormat) ?? fileConfig?.LogFormat ?? LogFormat.Text;
         using var loggerFactory = LogConsoleFactory.Create(verbose, logFormat);
         var logger = loggerFactory.CreateLogger("OSVFS");
+        using var refreshNotifier = new WindowsBalloonTipNotifier(
+            loggerFactory.CreateLogger<WindowsBalloonTipNotifier>());
 
         if (fileConfig is null || fileConfig.Mounts.Count == 0)
         {
@@ -168,7 +173,7 @@ internal static class MountCommandFactory
             ProjFsProviderOptions options;
             try
             {
-                options = MountOptionsBuilder.Build(mount, credentialStore, logger);
+                options = MountOptionsBuilder.Build(mount, credentialStore, logger, refreshNotifier);
             }
             catch (OsvfsConfigException ex)
             {

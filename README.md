@@ -630,39 +630,69 @@ backup of your AWS credentials.
 
 #### Sign in via AWS IAM Identity Center (SSO)
 
-For environments that use AWS IAM Identity Center (formerly AWS SSO),
-`osvfs credentials sso` runs the full OAuth device-authorization flow:
-register a public OIDC client, open the user portal in the default browser,
-poll `CreateToken` until you approve the request, exchange the resulting
-bearer token for short-term role credentials, and save them under the
-requested profile name.
+For environments that use AWS IAM Identity Center (formerly AWS SSO), use
+the AWS CLI's built-in `aws configure sso` flow — it writes an
+`sso_session` profile to `~/.aws/config`, caches the bearer token under
+`~/.aws/sso/cache/`, and the AWS SDK auto-refreshes the role credentials
+on every request. OSVFS picks the profile up through the SDK shared-profile
+chain, so there is no OSVFS-specific SSO command to learn.
 
-```powershell
-osvfs credentials sso `
-  --start-url   https://my-org.awsapps.com/start `
-  --region      us-east-1 `
-  --account-id  123456789012 `
-  --role-name   ReadOnly `
-  --profile     prod
-```
+1. **Run the SDK's wizard** (writes an `sso-session` block + a profile
+   referencing it; see
+   [SDK docs](https://docs.aws.amazon.com/sdkref/latest/guide/feature-sso-credentials.html#sso-token-config)):
+   ```powershell
+   aws configure sso --profile prod
+   ```
+   The wizard prompts for the start URL, region, account, and role and
+   produces something like:
+   ```ini
+   [sso-session my-org]
+   sso_start_url = https://my-org.awsapps.com/start
+   sso_region    = us-east-1
+   sso_registration_scopes = sso:account:access
 
-The bearer token (and the OIDC client registration) is cached encrypted with
-DPAPI under the target name `OSVFS:sso-cache:<startUrl>`, so subsequent runs
-within the token's lifetime skip the browser prompt and only refresh the role
-credentials. Once a profile has been populated this way, reference it from
-`osvfs.toml` exactly like a static profile (`aws-profile = "prod"`).
+   [profile prod]
+   sso_session   = my-org
+   sso_account_id = 123456789012
+   sso_role_name  = ReadOnly
+   region         = us-east-1
+   ```
+2. **(Re-)authorize the bearer token** any time it expires (~8 h by default):
+   ```powershell
+   aws sso login --sso-session my-org
+   ```
+3. **Reference the profile from `osvfs.toml`** exactly like any other
+   profile name. The OSVFS DPAPI store is consulted first; on a miss OSVFS
+   falls back to the shared profile chain and picks up the SSO entry:
+   ```toml
+   provider    = "s3"
+   bucket      = "my-bucket"
+   root-folder = "C:/Users/you/OSVFS"
+   aws-profile = "prod"
+   ```
 
-Re-run the command at any time to refresh the role credentials. To verify on
-a real environment, install the published binary and run:
+`osvfs doctor --profile prod` reports the resolution path
+(e.g. `shared profile 'prod' (sso)`) so you can confirm the SDK chain is
+serving the credentials.
 
-```powershell
-.\publish\win-x64\osvfs.exe credentials sso `
-  --start-url <your-start-url> --region <your-sso-region> `
-  --account-id <account> --role-name <role> --profile sso-test
+##### Automatic refresh while mounted
 
-.\publish\win-x64\osvfs.exe credentials get --profile sso-test
-.\publish\win-x64\osvfs.exe doctor --bucket <your-bucket> --region <bucket-region> --profile sso-test
-```
+The SDK's `SSOAWSCredentials` (and the matching wrappers for
+`credential_process`, `AssumeRole`, …) all roll their short-term
+credentials over before expiry on every signed request — OSVFS does not
+need to do anything for the happy path. As an additional safety net,
+OSVFS catches the rare on-the-wire `ExpiredToken` response that slips
+past the SDK's preempt window (machine sleep / resume, large clock skew),
+calls `ClearCredentials()` on the SDK's refreshing wrapper, and retries
+the request once.
+
+- **Retry succeeds**: a single Information log line records the new
+  expiration; the mount keeps running.
+- **Retry fails** (the upstream bearer / refresh token has itself
+  expired): a Windows balloon-tip notification "OSVFS: AWS credentials
+  expired" tells the operator to re-run `aws sso login` (or
+  `aws login` / `osvfs credentials set`) to re-authenticate, and the
+  failed request's exception propagates back to the caller.
 
 #### Sign in via `aws login` (AWS CLI 2.32+)
 

@@ -26,7 +26,7 @@ internal sealed class AwsCredentialSource
 
     /// <summary>
     /// Human-readable description of the resolution path (e.g.
-    /// <c>"OSVFS profile 'prod'"</c> or <c>"shared profile 'osvfs-login' (credential_process)"</c>).
+    /// <c>"OSVFS profile 'prod'"</c> or <c>"shared profile 'osvfs-login' (sso)"</c>).
     /// Surfaced by the doctor and the mount-startup log message.
     /// </summary>
     public string Description { get; }

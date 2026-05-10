@@ -20,6 +20,14 @@ internal sealed record StoredSecretPayload
     /// </summary>
     [JsonPropertyName("session")]
     public string? SessionToken { get; init; }
+
+    /// <summary>
+    /// Wall-clock expiration as Unix epoch seconds. Null for permanent IAM
+    /// keys; populated for STS short-term credentials so the SDK's refreshing
+    /// wrapper can pre-empt expiry on subsequent loads.
+    /// </summary>
+    [JsonPropertyName("expires_at_unix")]
+    public long? ExpiresAtUnix { get; init; }
 }
 
 /// <summary>

@@ -114,4 +114,14 @@ internal sealed record ProjFsProviderOptions
     /// repeated warning. Intended for CI / disposable buckets only.
     /// </summary>
     public bool AllowUnversioned { get; init; }
+
+    /// <summary>
+    /// Optional sink for ExpiredToken-driven credential refresh outcomes. The
+    /// host wires <see cref="Notifications.WindowsBalloonTipNotifier"/> here so
+    /// long-running mounts surface a toast when the SDK's refreshing wrapper
+    /// (SSO, credential_process, AssumeRole) cannot roll the credential over.
+    /// Null disables operator-facing notifications; everything still gets
+    /// logged at the SDK level.
+    /// </summary>
+    public ICredentialRefreshNotifier? RefreshNotifier { get; init; }
 }

@@ -20,4 +20,12 @@ internal sealed record AwsCredential
     /// Optional session token for temporary credentials issued by STS.
     /// </summary>
     public string? SessionToken { get; init; }
+
+    /// <summary>
+    /// Wall-clock expiration of the credential pair. Populated for STS / SSO
+    /// short-lived credentials so the SDK's <see cref="Amazon.Runtime.RefreshingAWSCredentials"/>
+    /// can proactively refresh before hard expiry. Null for permanent IAM keys
+    /// (which never expire).
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; init; }
 }

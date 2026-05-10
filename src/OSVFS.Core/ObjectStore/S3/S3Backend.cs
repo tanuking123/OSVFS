@@ -72,6 +72,30 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     private readonly IRateLimiter? downLimiter;
 
     /// <summary>
+    /// Reference to the SDK's refreshing credentials wrapper when the supplied
+    /// credential source resolves to one (e.g. SSO, credential_process,
+    /// AssumeRole — all subclasses of <see cref="RefreshingAWSCredentials"/>).
+    /// The <see cref="ExpiredTokenRetry"/> helper calls
+    /// <see cref="RefreshingAWSCredentials.ClearCredentials"/> on this to
+    /// force a re-fetch after an <c>ExpiredToken</c> response. Null when the
+    /// credential source is plain static keys.
+    /// </summary>
+    private readonly RefreshingAWSCredentials? refreshableCredentials;
+
+    /// <summary>
+    /// Optional sink for <see cref="ExpiredTokenRetry"/> to surface refresh
+    /// outcomes (success → log line, failure → toast). Null disables.
+    /// </summary>
+    private readonly ICredentialRefreshNotifier? refreshNotifier;
+
+    /// <summary>
+    /// Human-readable description of the credential source, threaded into
+    /// refresh notifications so the operator knows which mount tripped the
+    /// notification.
+    /// </summary>
+    private readonly string? credentialDescription;
+
+    /// <summary>
     /// Default attempt count when the host does not pass an explicit override.
     /// Matches the SDK's historical default (one initial attempt + two retries).
     /// </summary>
@@ -88,6 +112,9 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     /// <paramref name="retryMaxAttempts"/> sets the total attempt count the SDK
     /// will make for transient failures (initial + retries). Null falls back to
     /// <see cref="DefaultRetryMaxAttempts"/>; <c>1</c> disables retries.
+    /// <paramref name="refreshNotifier"/> receives ExpiredToken-driven refresh
+    /// outcomes; null disables notifications (everything still gets logged at
+    /// the SDK level).
     /// </summary>
     public S3Backend(
         string bucketName,
@@ -99,16 +126,26 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         IRateLimiter? downLimiter = null,
         long? multipartThresholdBytes = null,
         long? multipartPartSizeBytes = null,
-        int? retryMaxAttempts = null)
+        int? retryMaxAttempts = null,
+        ICredentialRefreshNotifier? refreshNotifier = null)
     {
         this.bucketName = bucketName;
         this.keyPrefix = KeyPath.NormalizeKeyPrefix(keyPrefix);
         this.upLimiter = upLimiter;
         this.downLimiter = downLimiter;
+        this.refreshNotifier = refreshNotifier;
+        credentialDescription = credentials?.Description;
         var threshold = multipartThresholdBytes ?? DefaultMultipartThresholdBytes;
         multipartPartSize = multipartPartSizeBytes ?? DefaultMultipartPartSizeBytes;
         var attempts = retryMaxAttempts ?? DefaultRetryMaxAttempts;
-        client = CreateClient(endpointUrl, region, credentials, attempts);
+        // Materialize once so the same AWSCredentials instance feeds both the
+        // SDK client AND the ExpiredToken retry helper. SDK-issued refreshing
+        // credentials (SSO, credential_process, AssumeRole, …) all derive
+        // from RefreshingAWSCredentials and therefore expose ClearCredentials()
+        // so we can force a re-fetch from outside the SDK pipeline.
+        var awsCredentials = credentials?.Materialize();
+        refreshableCredentials = awsCredentials as RefreshingAWSCredentials;
+        client = CreateClient(endpointUrl, region, awsCredentials, attempts);
         // Share a single TransferUtility per backend: it's documented thread-safe, holds no
         // upload-specific state, and disposes only its internally-created client (not ours).
         transferUtility = new TransferUtility(client, new TransferUtilityConfig
@@ -204,10 +241,10 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     /// <inheritdoc/>
     public async Task<BucketVersioningStatus> GetBucketVersioningStatusAsync(CancellationToken ct)
     {
-        var resp = await client.GetBucketVersioningAsync(new GetBucketVersioningRequest
+        var resp = await WithRefreshRetryAsync(() => client.GetBucketVersioningAsync(new GetBucketVersioningRequest
         {
             BucketName = bucketName,
-        }, ct).ConfigureAwait(false);
+        }, ct)).ConfigureAwait(false);
 
         // S3 returns no Status element until versioning has ever been configured. Anything
         // other than the explicit "Enabled" state (never configured, or suspended after
@@ -230,11 +267,11 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
 
         try
         {
-            var resp = await client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            var resp = await WithRefreshRetryAsync(() => client.GetObjectMetadataAsync(new GetObjectMetadataRequest
             {
                 BucketName = bucketName,
                 Key = fullKey,
-            }, ct).ConfigureAwait(false);
+            }, ct)).ConfigureAwait(false);
 
             return new ObjectInfo(
                 Key: relKey,
@@ -248,12 +285,12 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
             var dirPrefix = fullKey.EndsWith('/') ? fullKey : fullKey + '/';
-            var listResp = await client.ListObjectsV2Async(new ListObjectsV2Request
+            var listResp = await WithRefreshRetryAsync(() => client.ListObjectsV2Async(new ListObjectsV2Request
             {
                 BucketName = bucketName,
                 Prefix = dirPrefix,
                 MaxKeys = 1,
-            }, ct).ConfigureAwait(false);
+            }, ct)).ConfigureAwait(false);
 
             if ((listResp.S3Objects?.Count ?? 0) > 0 || (listResp.CommonPrefixes?.Count ?? 0) > 0)
             {
@@ -275,12 +312,12 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     {
         if (length == 0) return;
 
-        using var resp = await client.GetObjectAsync(new GetObjectRequest
+        using var resp = await WithRefreshRetryAsync(() => client.GetObjectAsync(new GetObjectRequest
         {
             BucketName = bucketName,
             Key = KeyPath.FullKey(keyPrefix, KeyPath.ToObjectKey(relativePath)),
             ByteRange = new ByteRange(offset, offset + length - 1),
-        }, ct).ConfigureAwait(false);
+        }, ct)).ConfigureAwait(false);
         // Wrap the response body in a rate-limited view when a download ceiling is configured;
         // CopyToAsync then only pulls bytes as fast as the limiter releases them.
         var source = downLimiter is null
@@ -343,7 +380,7 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         };
         ApplyUserMetadata(request.Metadata, userMetadata);
 
-        var resp = await client.PutObjectAsync(request, ct).ConfigureAwait(false);
+        var resp = await WithRefreshRetryAsync(() => client.PutObjectAsync(request, ct)).ConfigureAwait(false);
 
         return new(
             ETag: resp.ETag ?? string.Empty,
@@ -373,7 +410,7 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         };
         ApplyUserMetadata(request.Metadata, userMetadata);
 
-        var resp = await transferUtility.UploadWithResponseAsync(request, ct).ConfigureAwait(false);
+        var resp = await WithRefreshRetryAsync(() => transferUtility.UploadWithResponseAsync(request, ct)).ConfigureAwait(false);
 
         return new(
             ETag: resp.ETag ?? string.Empty,
@@ -432,11 +469,11 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
 
         try
         {
-            await client.DeleteObjectAsync(new DeleteObjectRequest
+            await WithRefreshRetryAsync(() => client.DeleteObjectAsync(new DeleteObjectRequest
             {
                 BucketName = bucketName,
                 Key = KeyPath.FullKey(keyPrefix, relKey),
-            }, ct).ConfigureAwait(false);
+            }, ct)).ConfigureAwait(false);
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -479,11 +516,11 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
 
         await CopyObjectAsync(oldKey, newKey, ct, preservedMetadata).ConfigureAwait(false);
 
-        await client.DeleteObjectAsync(new DeleteObjectRequest
+        await WithRefreshRetryAsync(() => client.DeleteObjectAsync(new DeleteObjectRequest
         {
             BucketName = bucketName,
             Key = oldKey,
-        }, ct).ConfigureAwait(false);
+        }, ct)).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -516,12 +553,34 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
 
     /// <summary>
     /// Iterates ListObjectsV2 pages on this backend's client. Delegates the
-    /// continuation-token plumbing to <see cref="S3Pagination.ListPagesAsync"/>.
+    /// continuation-token plumbing to <see cref="S3Pagination.ListPagesAsync"/>
+    /// while wrapping each per-page request in
+    /// <see cref="ExpiredTokenRetry"/> so a credential that expires partway
+    /// through a multi-page list is recovered transparently.
     /// </summary>
     private IAsyncEnumerable<ListObjectsV2Response> ListPagesAsync(
         ListObjectsV2Request request,
         CancellationToken ct) =>
-        S3Pagination.ListPagesAsync(client.ListObjectsV2Async, request, ct);
+        S3Pagination.ListPagesAsync(
+            (req, token) => WithRefreshRetryAsync(() => client.ListObjectsV2Async(req, token)),
+            request,
+            ct);
+
+    /// <summary>
+    /// Wraps a single S3 SDK call with the OSVFS expired-credential retry
+    /// helper. No-op for plain static keys (refreshableCredentials is null);
+    /// for SDK-managed refreshing wrappers (SSO, credential_process,
+    /// AssumeRole) it forces a refresh and retries the call exactly once
+    /// when the wire returned <c>ExpiredToken</c>.
+    /// </summary>
+    private Task<T> WithRefreshRetryAsync<T>(Func<Task<T>> call) =>
+        ExpiredTokenRetry.RunAsync(call, refreshableCredentials, refreshNotifier, credentialDescription);
+
+    /// <summary>
+    /// Void-returning variant of <see cref="WithRefreshRetryAsync{T}"/>.
+    /// </summary>
+    private Task WithRefreshRetryAsync(Func<Task> call) =>
+        ExpiredTokenRetry.RunAsync(call, refreshableCredentials, refreshNotifier, credentialDescription);
 
     /// <summary>
     /// Yields one <see cref="ObjectInfo"/> per real (non-marker) object across all
@@ -617,7 +676,7 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
             request.MetadataDirective = S3MetadataDirective.REPLACE;
             ApplyUserMetadata(request.Metadata, metadataOverride);
         }
-        return client.CopyObjectAsync(request, ct);
+        return WithRefreshRetryAsync(() => client.CopyObjectAsync(request, ct));
     }
 
     /// <summary>
@@ -630,11 +689,11 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     {
         try
         {
-            var resp = await client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+            var resp = await WithRefreshRetryAsync(() => client.GetObjectMetadataAsync(new GetObjectMetadataRequest
             {
                 BucketName = bucketName,
                 Key = fullKey,
-            }, ct).ConfigureAwait(false);
+            }, ct)).ConfigureAwait(false);
             return ExtractUserMetadata(resp.Metadata);
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
@@ -692,12 +751,12 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     /// </summary>
     private async Task FlushDeleteBatchAsync(List<KeyVersion> batch, CancellationToken ct)
     {
-        await client.DeleteObjectsAsync(new DeleteObjectsRequest
+        await WithRefreshRetryAsync(() => client.DeleteObjectsAsync(new DeleteObjectsRequest
         {
             BucketName = bucketName,
             Objects = batch,
             Quiet = true,
-        }, ct).ConfigureAwait(false);
+        }, ct)).ConfigureAwait(false);
         batch.Clear();
     }
 
@@ -712,7 +771,7 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
     private static AmazonS3Client CreateClient(
         string? endpointUrl,
         string? region,
-        AwsCredentialSource? credentials,
+        AWSCredentials? credentials,
         int retryMaxAttempts)
     {
         var config = new AmazonS3Config
@@ -748,9 +807,6 @@ internal sealed class S3Backend : IObjectStoreBackend, IDisposable
         {
             return new AmazonS3Client(config);
         }
-        // Materialize once: the static branch builds a fresh BasicAWS/SessionAWS pair,
-        // the SDK branch returns the refreshing wrapper supplied by the caller (e.g. a
-        // ProcessAWSCredentials around `aws configure export-credentials`).
-        return new AmazonS3Client(credentials.Materialize(), config);
+        return new AmazonS3Client(credentials, config);
     }
 }

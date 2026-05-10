@@ -5,6 +5,7 @@ using OSVFS.Configuration;
 using OSVFS.Credentials;
 using OSVFS.Diagnostics;
 using OSVFS.Logging;
+using OSVFS.Notifications;
 using OSVFS.ProjFs;
 
 const int ExitGeneralException = 2;
@@ -43,6 +44,8 @@ rootCommand.SetAction(parseResult =>
 
     using var loggerFactory = LogConsoleFactory.Create(verbose, logFormat);
     var logger = loggerFactory.CreateLogger("OSVFS");
+    using var refreshNotifier = new WindowsBalloonTipNotifier(
+        loggerFactory.CreateLogger<WindowsBalloonTipNotifier>());
 
     if (fileConfig is null || fileConfig.Mounts.Count == 0)
     {
@@ -73,7 +76,7 @@ rootCommand.SetAction(parseResult =>
     ProjFsProviderOptions options;
     try
     {
-        options = MountOptionsBuilder.Build(mountConfig, credentialStore, logger);
+        options = MountOptionsBuilder.Build(mountConfig, credentialStore, logger, refreshNotifier);
     }
     catch (OsvfsConfigException ex)
     {

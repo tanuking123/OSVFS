@@ -1,9 +1,6 @@
 using System.CommandLine;
-using Microsoft.Extensions.Time.Testing;
 using OSVFS.Credentials;
-using OSVFS.Credentials.Sso;
 using OSVFS.ObjectStore;
-using OSVFS.UnitTests.Credentials.Sso;
 using Xunit;
 
 namespace OSVFS.UnitTests.Credentials;
@@ -155,88 +152,6 @@ public class CredentialsCommandFactoryTests
 
         Assert.Equal(1, exit);
         Assert.Contains("missing", stderr);
-    }
-
-    [Fact]
-    public async Task Sso_runs_login_flow_and_saves_role_credentials_under_profile()
-    {
-        var store = new FakeCredentialStore();
-        var flow = new FakeSsoFlowClient();
-        flow.CreateTokenSequence.Enqueue(new SsoAccessToken
-        {
-            AccessToken = "bearer-1",
-            ExpiresAt = new DateTimeOffset(2026, 5, 10, 13, 0, 0, TimeSpan.Zero),
-        });
-        var cache = new FakeSsoTokenCache();
-        var browser = new RecordingBrowserLauncher();
-
-        var (exit, stdout, _) = await RunAsync(store, flow, cache, browser,
-            "sso",
-            "--start-url", "https://example.awsapps.com/start",
-            "--region", "us-east-1",
-            "--account-id", "123456789012",
-            "--role-name", "ReadOnly",
-            "--profile", "demo");
-
-        Assert.Equal(0, exit);
-        Assert.True(store.Entries.ContainsKey("demo"));
-        Assert.Equal("AKIAEXAMPLE", store.Entries["demo"].AccessKeyId);
-        Assert.Single(browser.LaunchedUrls);
-        Assert.Contains("Saved profile 'demo'", stdout);
-    }
-
-    [Fact]
-    public async Task Sso_returns_one_and_writes_message_when_login_fails()
-    {
-        var store = new FakeCredentialStore();
-        var flow = new FakeSsoFlowClient();
-        flow.CreateTokenSequence.Enqueue(new SsoLoginException("invalid client"));
-
-        var (exit, _, stderr) = await RunAsync(store, flow, new FakeSsoTokenCache(), new RecordingBrowserLauncher(),
-            "sso",
-            "--start-url", "https://example.awsapps.com/start",
-            "--region", "us-east-1",
-            "--account-id", "123456789012",
-            "--role-name", "ReadOnly",
-            "--profile", "demo");
-
-        Assert.Equal(1, exit);
-        Assert.Empty(store.Entries);
-        Assert.Contains("invalid client", stderr);
-    }
-
-    /// <summary>
-    /// Builds the credentials command tree wired to in-memory SSO collaborators,
-    /// drives <paramref name="args"/> through it, and returns the captured I/O.
-    /// </summary>
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(
-        FakeCredentialStore store,
-        FakeSsoFlowClient flow,
-        FakeSsoTokenCache cache,
-        RecordingBrowserLauncher browser,
-        params string[] args)
-    {
-        var time = new FakeTimeProvider(new DateTimeOffset(2026, 5, 10, 12, 0, 0, TimeSpan.Zero));
-        SsoLoginService Factory(SsoLoginParameters _, TextWriter output) =>
-            new(flow, cache, store, browser, time, output, TimeSpan.Zero);
-
-        var command = CredentialsCommandFactory.Build(store, Factory);
-        var prevOut = Console.Out;
-        var prevErr = Console.Error;
-        var stdout = new StringWriter();
-        var stderr = new StringWriter();
-        try
-        {
-            Console.SetOut(stdout);
-            Console.SetError(stderr);
-            var exit = await command.Parse(args).InvokeAsync();
-            return (exit, stdout.ToString(), stderr.ToString());
-        }
-        finally
-        {
-            Console.SetOut(prevOut);
-            Console.SetError(prevErr);
-        }
     }
 
     /// <summary>

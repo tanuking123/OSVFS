@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -70,6 +71,7 @@ internal sealed partial class WindowsCredentialStore : IAwsCredentialStore
         {
             SecretAccessKey = credential.SecretAccessKey,
             SessionToken = credential.SessionToken,
+            ExpiresAtUnix = credential.ExpiresAt?.ToUnixTimeSeconds(),
         };
 
         var json = JsonSerializer.SerializeToUtf8Bytes(payload, StoredSecretJsonContext.Default.StoredSecretPayload);
@@ -88,7 +90,7 @@ internal sealed partial class WindowsCredentialStore : IAwsCredentialStore
     }
 
     /// <inheritdoc/>
-    public AwsCredential? Load(string profileName)
+    public unsafe AwsCredential? Load(string profileName)
     {
         ValidateProfile(profileName);
 
@@ -102,7 +104,10 @@ internal sealed partial class WindowsCredentialStore : IAwsCredentialStore
 
         try
         {
-            var cred = Marshal.PtrToStructure<Credential>(credPtr);
+            // The CREDENTIAL struct is fully blittable; Unsafe.Read avoids the
+            // CA1421 warning that Marshal.PtrToStructure trips when the assembly
+            // opts out of legacy runtime marshalling (DisableRuntimeMarshalling).
+            var cred = Unsafe.Read<Credential>((void*)credPtr);
             var accessKeyId = Marshal.PtrToStringUni(cred.UserName) ?? string.Empty;
             if (string.IsNullOrEmpty(accessKeyId)) return null;
 
@@ -128,6 +133,9 @@ internal sealed partial class WindowsCredentialStore : IAwsCredentialStore
                     AccessKeyId = accessKeyId,
                     SecretAccessKey = payload.SecretAccessKey,
                     SessionToken = payload.SessionToken,
+                    ExpiresAt = payload.ExpiresAtUnix is { } unix
+                        ? DateTimeOffset.FromUnixTimeSeconds(unix)
+                        : null,
                 };
             }
             finally
@@ -154,7 +162,7 @@ internal sealed partial class WindowsCredentialStore : IAwsCredentialStore
     }
 
     /// <inheritdoc/>
-    public IReadOnlyList<string> List()
+    public unsafe IReadOnlyList<string> List()
     {
         // The Win32 filter uses '*' as a wildcard; "OSVFS:AWS:*" returns every credential
         // whose target starts with our namespace.
@@ -172,7 +180,8 @@ internal sealed partial class WindowsCredentialStore : IAwsCredentialStore
             for (var i = 0; i < count; i++)
             {
                 var entryPtr = Marshal.ReadIntPtr(creds, i * IntPtr.Size);
-                var cred = Marshal.PtrToStructure<Credential>(entryPtr);
+                // CREDENTIAL is blittable; Unsafe.Read keeps DisableRuntimeMarshalling happy.
+                var cred = Unsafe.Read<Credential>((void*)entryPtr);
                 var target = Marshal.PtrToStringUni(cred.TargetName);
                 if (target is null || !target.StartsWith(TargetPrefix, StringComparison.Ordinal)) continue;
                 profiles.Add(target[TargetPrefix.Length..]);
