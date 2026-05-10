@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using OSVFS.ObjectStore;
+using OSVFS.ObjectStore.AzureBlob;
 using OSVFS.Sync;
+using OSVFS.Sync.AzureQueue;
 using OSVFS.Sync.Sqs;
 using Xunit;
 
@@ -54,19 +56,42 @@ public class ChangeNotificationFactoryTests
     }
 
     [Fact]
-    public void Create_throws_NotSupportedException_for_AzureBlob()
+    public async Task Create_returns_AzureStorageQueueChangeSource_for_AzureBlob_provider()
     {
-        var ex = Assert.Throws<NotSupportedException>(() =>
+        // Connection-string credentials let the factory resolve a bare queue
+        // name without needing a fully-qualified queue URL — the same shape
+        // an Azurite mount uses today.
+        var source = ChangeNotificationFactory.Create(
+            ObjectStoreProvider.AzureBlob,
+            queueOrSubscription: "osvfs-changes",
+            bucketName: "my-container",
+            keyPrefix: null,
+            endpointUrl: null,
+            region: null,
+            credentials: AzureCredentialSource.FromConnectionString(
+                "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=Zm9v;EndpointSuffix=core.windows.net",
+                "test"),
+            NullLoggerFactory.Instance);
+
+        Assert.IsType<AzureStorageQueueChangeSource>(source);
+        await source.DisposeAsync();
+    }
+
+    [Fact]
+    public void Create_throws_for_AzureBlob_when_credentials_are_missing()
+    {
+        // Storage Queue access requires credentials — there is no anonymous
+        // path. The factory must surface that explicitly so the operator
+        // hits a clear startup error rather than an opaque SDK 401.
+        Assert.Throws<InvalidOperationException>(() =>
             ChangeNotificationFactory.Create(
                 ObjectStoreProvider.AzureBlob,
-                queueOrSubscription: "https://account.queue.core.windows.net/queue",
+                queueOrSubscription: "https://account.queue.core.windows.net/q",
                 bucketName: "my-container",
                 keyPrefix: null,
                 endpointUrl: null,
                 region: null,
                 credentials: null,
                 NullLoggerFactory.Instance));
-
-        Assert.Contains("polling", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 }

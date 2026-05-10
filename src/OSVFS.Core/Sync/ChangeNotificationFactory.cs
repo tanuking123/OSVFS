@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using OSVFS.ObjectStore;
+using OSVFS.Sync.AzureQueue;
 using OSVFS.Sync.Sqs;
 
 namespace OSVFS.Sync;
@@ -48,9 +49,12 @@ internal static class ChangeNotificationFactory
             ObjectStoreProvider.Gcs => throw new NotSupportedException(
                 "Push-mode change notifications for GCS (Pub/Sub) are not yet implemented. " +
                 "Use 'change-source = \"polling\"' until the GCS backend lands."),
-            ObjectStoreProvider.AzureBlob => throw new NotSupportedException(
-                "Push-mode change notifications for Azure Blob (Event Grid → Storage Queue) " +
-                "are not yet implemented. Use 'change-source = \"polling\"' until the Azure backend lands."),
+            ObjectStoreProvider.AzureBlob => AzureStorageQueueChangeSourceFactory.Create(
+                queueOrSubscription,
+                bucketName,
+                keyPrefix,
+                credentials,
+                loggerFactory.CreateLogger<AzureStorageQueueChangeSource>()),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider), provider, "Unknown object-store provider."),
         };

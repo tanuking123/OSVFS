@@ -200,6 +200,7 @@
           "AWSSDK.SSOOIDC": "[4.0.3, )",
           "Azure.Identity": "[1.13.2, )",
           "Azure.Storage.Blobs": "[12.22.2, )",
+          "Azure.Storage.Queues": "[12.20.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.7, )"
         }
       },
@@ -257,6 +258,16 @@
         "contentHash": "/BK63qx31dhXjnqOXB90DP8mJM+pHbti45+v/D3SiEgP2A+ekvJlGWGLVGQznriT5UAOerM+3vAAEJNKolVSIQ==",
         "dependencies": {
           "Azure.Storage.Common": "12.21.1"
+        }
+      },
+      "Azure.Storage.Queues": {
+        "type": "CentralTransitive",
+        "requested": "[12.20.1, )",
+        "resolved": "12.20.1",
+        "contentHash": "ZylPb8kc1DkLvDhNjdKxSbC23hPzu74a7Wiil7UXIBjnIZOkLI+dfQSTTXiejQaHBNpgZC+xWjNyZa3a71AoBQ==",
+        "dependencies": {
+          "Azure.Storage.Common": "12.21.1",
+          "System.Memory.Data": "6.0.0"
         }
       },
       "Microsoft.Extensions.Logging.Abstractions": {

@@ -13,6 +13,9 @@
          the default API version forward of what Azurite ships, breaking the
          IT with InvalidHeaderValue. -->
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.22.2" />
+    <!-- Azure Storage Queue carries Event Grid notifications for blob changes;
+         pinned alongside Azure.Storage.Blobs 12.22 for consistency. -->
+    <PackageVersion Include="Azure.Storage.Queues" Version="12.20.1" />
     <!-- Azure.Identity ships DefaultAzureCredential and ManagedIdentityCredential
          alongside the storage SDK. Version pinned for source-build compatibility
          with Azure.Storage.Blobs 12.22. -->
