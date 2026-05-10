@@ -49,6 +49,17 @@
 # SDK's default chain.
 # aws-profile = "prod"
 
+# When true, project the bucket into the virtualization root one-way: ProjFS
+# pre-notifications for delete / rename / hardlink / placeholder-to-full are
+# rejected, the upload path is short-circuited, and the change watcher is
+# disabled (no polling, no SQS receive, no .osvfs-lost+found quarantine).
+# The directory listing / placeholder / on-demand hydration path is
+# unaffected. Useful for compliance walkthroughs, kiosk / analytics
+# workstations, or any caller whose IAM policy lacks s3:PutObject /
+# s3:DeleteObject. The mount becomes a frozen snapshot — restart osvfs to
+# pick up later remote edits.
+# read-only = false
+
 # Polling interval (seconds) for detecting external object-store changes.
 # 0 disables the watcher when change-source = "polling".
 # sync-interval-seconds = 30
