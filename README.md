@@ -586,72 +586,20 @@ Telemetry stays disabled when neither source supplies an endpoint.
 
 #### Run a local collector + Jaeger + Prometheus
 
-The OpenTelemetry Collector contrib image bundles every OTLP receiver and
-the exporters needed to fan signals out to Jaeger (traces) and Prometheus
-(metrics). A minimal `docker-compose.yml`:
+A ready-to-run sample stack (OpenTelemetry Collector contrib + Jaeger
+v2 + Prometheus) is checked in under
+[`examples/otel/`](./examples/otel):
 
-```yaml
-services:
-  jaeger:
-    image: jaegertracing/all-in-one:1.62
-    ports: ["16686:16686"]   # UI
-
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports: ["9090:9090"]
-
-  otelcol:
-    image: otel/opentelemetry-collector-contrib:0.108.0
-    command: ["--config=/etc/otelcol/config.yaml"]
-    volumes:
-      - ./otelcol.yaml:/etc/otelcol/config.yaml:ro
-    ports:
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
-      - "9464:9464"   # Prometheus scrape endpoint
-    depends_on: [jaeger, prometheus]
-```
-
-`otelcol.yaml`:
-
-```yaml
-receivers:
-  otlp:
-    protocols:
-      grpc:
-      http:
-
-exporters:
-  otlp/jaeger:
-    endpoint: jaeger:4317
-    tls: { insecure: true }
-  prometheus:
-    endpoint: 0.0.0.0:9464
-
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      exporters: [otlp/jaeger]
-    metrics:
-      receivers: [otlp]
-      exporters: [prometheus]
-```
-
-`prometheus.yml`:
-
-```yaml
-scrape_configs:
-  - job_name: otelcol
-    static_configs:
-      - targets: ["otelcol:9464"]
-```
+| File | Role |
+| --- | --- |
+| [`examples/otel/docker-compose.yml`](./examples/otel/docker-compose.yml) | Brings up `jaeger`, `prometheus`, and `otelcol`. Exposes 4317 (OTLP gRPC), 4318 (OTLP HTTP), 16686 (Jaeger UI), 9090 (Prometheus UI). |
+| [`examples/otel/otelcol.yaml`](./examples/otel/otelcol.yaml) | Collector pipeline: OTLP receiver → Jaeger (traces) + Prometheus exporter on 9464 (metrics). |
+| [`examples/otel/prometheus.yml`](./examples/otel/prometheus.yml) | Prometheus scrape config pointing at `otelcol:9464`. |
 
 Start the stack and the OSVFS host:
 
 ```powershell
+cd examples/otel
 docker compose up -d
 osvfs --otlp-endpoint http://localhost:4317
 ```

@@ -1,0 +1,12 @@
+# Prometheus configuration for the OSVFS sample stack.
+#
+# Scrapes the OpenTelemetry Collector's Prometheus endpoint exposed at
+# otelcol:9464 every 15 s (the default interval), so OSVFS metrics
+# (osvfs_s3_*, osvfs_projfs_*) become queryable in the Prometheus UI
+# at http://localhost:9090.
+
+scrape_configs:
+  - job_name: otelcol
+    static_configs:
+      - targets:
+          - otelcol:9464

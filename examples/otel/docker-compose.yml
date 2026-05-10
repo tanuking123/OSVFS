@@ -1,0 +1,45 @@
+# OSVFS OpenTelemetry sample stack: OTel Collector + Jaeger + Prometheus.
+#
+# Usage:
+#   cd examples/otel
+#   docker compose up -d
+#   osvfs --otlp-endpoint http://localhost:4317
+#
+# UIs:
+#   Jaeger     : http://localhost:16686  (pick the "osvfs" service)
+#   Prometheus : http://localhost:9090
+#
+# The collector listens on 4317 (OTLP gRPC) and 4318 (OTLP HTTP);
+# pick the matching --otlp-endpoint port. Spans flow to Jaeger,
+# metrics are scraped by Prometheus from the collector's /metrics
+# endpoint on 9464.
+#
+# Jaeger v2 is used here — Jaeger v1 (the `all-in-one` image) was
+# end-of-lifed in 2025. v2 accepts OTLP natively, which is why the
+# collector forwards traces straight to jaeger:4317 below.
+
+services:
+  jaeger:
+    image: jaegertracing/jaeger:2.17.0
+    ports:
+      - "16686:16686"   # UI
+
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.148.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otelcol.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "9464:9464"   # Prometheus scrape endpoint
+    depends_on:
+      - jaeger
+      - prometheus

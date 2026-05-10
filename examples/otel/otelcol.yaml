@@ -1,0 +1,37 @@
+# OpenTelemetry Collector configuration for the OSVFS sample stack.
+#
+# Receives OTLP traces + metrics from the OSVFS host on 4317 (gRPC)
+# and 4318 (HTTP), forwards traces to Jaeger via OTLP, and exposes
+# metrics on :9464 for Prometheus to scrape.
+#
+# Endpoints are bound to 0.0.0.0 explicitly: starting with otelcol
+# 0.110+, the default OTLP listener is 127.0.0.1, which would refuse
+# the docker port forward from the Windows host.
+#
+# `tls.insecure: true` is fine for the local docker-compose stack;
+# replace it with a real TLS config in production.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:9464
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp/jaeger]
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]
