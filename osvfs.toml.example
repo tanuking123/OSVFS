@@ -95,10 +95,11 @@
 # bandwidth-down = "10M"
 
 # Stream size at or above which uploads are routed through the multipart path.
-# Same K/M/G suffixes as bandwidth-up. Defaults to "8M". Raise it on fat links
-# where a single PUT outperforms multipart's per-request overhead, lower it
-# when most files are small but you still want multipart's parallel parts.
-# multipart-threshold = "8M"
+# Same K/M/G suffixes as bandwidth-up. Defaults to "16M" (matches the AWS SDK
+# v4 default for MinSizeBeforePartUpload). Raise it on fat links where a single
+# PUT outperforms multipart's per-request overhead, lower it when most files
+# are small but you still want multipart's parallel parts.
+# multipart-threshold = "16M"
 
 # Per-part size used by multipart uploads. Must be between 5M (S3 minimum) and
 # 5G (S3 maximum); the last part may be smaller. Defaults to "5M". Pick a
@@ -112,6 +113,25 @@
 # (HTTP 5xx, request timeouts, throttling, connection errors). 1 disables
 # retries; 4xx client errors fail immediately regardless of this value.
 # retry-max-attempts = 3
+
+# Maximum number of in-flight UploadAsync calls. One save = one permit,
+# regardless of how many multipart parts the SDK fans the call out into.
+# Default 4. Lower this on flaky upstreams to keep retry storms manageable;
+# raise it for many-small-files workloads. Must be >= 1.
+# max-concurrent-uploads = 4
+
+# Maximum number of in-flight ReadRangeAsync calls (one per ProjFS hydration
+# request). Default 8. Raise it for read-heavy workloads on a fat link;
+# lower it on metered or shared connections. Must be >= 1.
+# max-concurrent-downloads = 8
+
+# Multipart parts uploaded in parallel inside a single UploadAsync call.
+# Threaded through to TransferUtilityConfig.ConcurrentServiceRequests.
+# Default 10. Higher values speed up single-large-file uploads on fat links;
+# lower values reduce burst pressure on the bucket. Peak in-flight S3 part
+# PUTs at any instant is at most max-concurrent-uploads * max-multipart-parts.
+# Must be >= 1.
+# max-multipart-parts = 10
 
 # Console log output format. "text" (default) writes single-line, human-
 # readable output; "json" writes one UTF-8 JSON object per line with UTC

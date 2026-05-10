@@ -47,4 +47,47 @@ public class S3BackendConstructorTests
             retryMaxAttempts: 1);
         Assert.NotNull(backend);
     }
+
+    [Fact]
+    public void Builds_with_default_concurrency_settings()
+    {
+        using var backend = new S3Backend("test-bucket", endpointUrl: LocalEndpoint);
+        // Defaults are documented as 4 / 8 / 10 (uploads / downloads / parts).
+        Assert.Equal(S3Backend.DefaultMaxConcurrentUploads, backend.MaxConcurrentUploads);
+        Assert.Equal(S3Backend.DefaultMaxConcurrentDownloads, backend.MaxConcurrentDownloads);
+    }
+
+    [Fact]
+    public void Builds_with_explicit_concurrency_settings()
+    {
+        using var backend = new S3Backend(
+            "test-bucket",
+            endpointUrl: LocalEndpoint,
+            maxConcurrentUploads: 2,
+            maxConcurrentDownloads: 3,
+            maxMultipartParts: 5);
+        Assert.Equal(2, backend.MaxConcurrentUploads);
+        Assert.Equal(3, backend.MaxConcurrentDownloads);
+        // Both gates start fully available; the in-flight count is
+        // MaxConcurrentUploads - CurrentUploadPermits.
+        Assert.Equal(2, backend.CurrentUploadPermits);
+        Assert.Equal(3, backend.CurrentDownloadPermits);
+    }
+
+    [Fact]
+    public void Clamps_concurrency_below_one_to_one()
+    {
+        // The constructor must defend against a zero or negative value sneaking
+        // past the host's validation: SemaphoreSlim throws on initialCount < 0
+        // and would deadlock on initialCount == 0. The backend clamps to 1 so
+        // a misconfiguration degrades to "serialize calls" rather than crash.
+        using var backend = new S3Backend(
+            "test-bucket",
+            endpointUrl: LocalEndpoint,
+            maxConcurrentUploads: 0,
+            maxConcurrentDownloads: -1,
+            maxMultipartParts: 0);
+        Assert.Equal(1, backend.MaxConcurrentUploads);
+        Assert.Equal(1, backend.MaxConcurrentDownloads);
+    }
 }

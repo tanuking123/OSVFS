@@ -110,6 +110,28 @@ internal sealed record ProjFsProviderOptions
     public int? RetryMaxAttempts { get; init; }
 
     /// <summary>
+    /// Maximum number of in-flight upload API calls (one per
+    /// <see cref="ObjectStore.IObjectStoreBackend.UploadAsync"/> invocation,
+    /// independent of the multipart parts that single call splits into). Null
+    /// falls back to the backend default.
+    /// </summary>
+    public int? MaxConcurrentUploads { get; init; }
+
+    /// <summary>
+    /// Maximum number of in-flight download API calls (one per
+    /// <see cref="ObjectStore.IObjectStoreBackend.ReadRangeAsync"/>
+    /// invocation). Null falls back to the backend default.
+    /// </summary>
+    public int? MaxConcurrentDownloads { get; init; }
+
+    /// <summary>
+    /// Maximum number of multipart parts uploaded in parallel inside a single
+    /// upload. Threaded through to <see cref="Amazon.S3.Transfer.TransferUtilityConfig.ConcurrentServiceRequests"/>.
+    /// Null falls back to the backend default.
+    /// </summary>
+    public int? MaxMultipartParts { get; init; }
+
+    /// <summary>
     /// When true, skip the bucket-versioning safety check and instead emit a
     /// repeated warning. Intended for CI / disposable buckets only.
     /// </summary>

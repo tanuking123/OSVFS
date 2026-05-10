@@ -29,6 +29,9 @@ public class OsvfsConfigFileLoaderTests
             bandwidth-down = "10M"
             multipart-threshold = "16M"
             multipart-part-size = "32M"
+            max-concurrent-uploads = 6
+            max-concurrent-downloads = 12
+            max-multipart-parts = 20
             log-format = "json"
             """;
 
@@ -51,6 +54,9 @@ public class OsvfsConfigFileLoaderTests
         Assert.Equal("10M", mount.BandwidthDown);
         Assert.Equal("16M", mount.MultipartThreshold);
         Assert.Equal("32M", mount.MultipartPartSize);
+        Assert.Equal(6, mount.MaxConcurrentUploads);
+        Assert.Equal(12, mount.MaxConcurrentDownloads);
+        Assert.Equal(20, mount.MaxMultipartParts);
     }
 
     [Fact]
@@ -280,6 +286,60 @@ public class OsvfsConfigFileLoaderTests
         var ex = Assert.Throws<OsvfsConfigException>(() =>
             OsvfsConfigFileLoader.ParseContent("retry-max-attempts = \"5\"", "test.toml"));
         Assert.Contains("retry-max-attempts", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_concurrency_settings_kebab_and_snake_aliases_accepted()
+    {
+        const string kebabToml = """
+            max-concurrent-uploads = 8
+            max-concurrent-downloads = 16
+            max-multipart-parts = 20
+            """;
+        const string snakeToml = """
+            max_concurrent_uploads = 2
+            max_concurrent_downloads = 3
+            max_multipart_parts = 4
+            """;
+
+        var kebab = OsvfsConfigFileLoader.ParseContent(kebabToml, "test.toml");
+        var snake = OsvfsConfigFileLoader.ParseContent(snakeToml, "test.toml");
+
+        var kebabMount = Assert.Single(kebab.Mounts);
+        Assert.Equal(8, kebabMount.MaxConcurrentUploads);
+        Assert.Equal(16, kebabMount.MaxConcurrentDownloads);
+        Assert.Equal(20, kebabMount.MaxMultipartParts);
+
+        var snakeMount = Assert.Single(snake.Mounts);
+        Assert.Equal(2, snakeMount.MaxConcurrentUploads);
+        Assert.Equal(3, snakeMount.MaxConcurrentDownloads);
+        Assert.Equal(4, snakeMount.MaxMultipartParts);
+    }
+
+    [Fact]
+    public void Parse_concurrency_settings_type_mismatch_throws()
+    {
+        var ex = Assert.Throws<OsvfsConfigException>(() =>
+            OsvfsConfigFileLoader.ParseContent("max-concurrent-uploads = \"4\"", "test.toml"));
+        Assert.Contains("max-concurrent-uploads", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Parse_concurrency_settings_rejected_at_root_when_mount_array_present()
+    {
+        // Stray top-level concurrency keys mixed with [[mount]] entries are
+        // ambiguous; the loader rejects them rather than silently dropping.
+        const string toml = """
+            max-concurrent-uploads = 4
+
+            [[mount]]
+            name = "a"
+            bucket = "x"
+            root-folder = "C:/x"
+            """;
+        var ex = Assert.Throws<OsvfsConfigException>(() =>
+            OsvfsConfigFileLoader.ParseContent(toml, "test.toml"));
+        Assert.Contains("max-concurrent-uploads", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

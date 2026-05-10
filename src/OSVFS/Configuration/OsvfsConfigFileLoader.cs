@@ -251,6 +251,9 @@ internal static class OsvfsConfigFileLoader
             MultipartThreshold = ReadString(table, "multipart-threshold", "multipart_threshold", sourcePath),
             MultipartPartSize = ReadString(table, "multipart-part-size", "multipart_part_size", sourcePath),
             RetryMaxAttempts = ReadInt(table, "retry-max-attempts", "retry_max_attempts", sourcePath),
+            MaxConcurrentUploads = ReadInt(table, "max-concurrent-uploads", "max_concurrent_uploads", sourcePath),
+            MaxConcurrentDownloads = ReadInt(table, "max-concurrent-downloads", "max_concurrent_downloads", sourcePath),
+            MaxMultipartParts = ReadInt(table, "max-multipart-parts", "max_multipart_parts", sourcePath),
             AllowUnversioned = ReadBool(table, "allow-unversioned", "allow_unversioned", sourcePath),
         };
     }
@@ -278,6 +281,9 @@ internal static class OsvfsConfigFileLoader
         || mount.MultipartThreshold is not null
         || mount.MultipartPartSize is not null
         || mount.RetryMaxAttempts is not null
+        || mount.MaxConcurrentUploads is not null
+        || mount.MaxConcurrentDownloads is not null
+        || mount.MaxMultipartParts is not null
         || mount.AllowUnversioned is not null;
 
     /// <summary>
@@ -311,6 +317,9 @@ internal static class OsvfsConfigFileLoader
             "multipart-threshold", "multipart_threshold",
             "multipart-part-size", "multipart_part_size",
             "retry-max-attempts", "retry_max_attempts",
+            "max-concurrent-uploads", "max_concurrent_uploads",
+            "max-concurrent-downloads", "max_concurrent_downloads",
+            "max-multipart-parts", "max_multipart_parts",
             "allow-unversioned", "allow_unversioned",
         ];
 

@@ -25,6 +25,9 @@ internal static class ObjectStoreBackendFactory
     /// <param name="multipartThresholdBytes">Override for the multipart upload threshold; null uses the backend default.</param>
     /// <param name="multipartPartSizeBytes">Override for the multipart upload part size; null uses the backend default.</param>
     /// <param name="retryMaxAttempts">Total attempts (initial + retries) the SDK makes on transient failures; null uses the backend default.</param>
+    /// <param name="maxConcurrentUploads">Maximum number of in-flight upload API calls; null uses the backend default.</param>
+    /// <param name="maxConcurrentDownloads">Maximum number of in-flight download API calls; null uses the backend default.</param>
+    /// <param name="maxMultipartParts">Maximum number of multipart parts uploaded in parallel inside a single upload; null uses the backend default.</param>
     /// <param name="refreshNotifier">Optional sink for ExpiredToken-driven credential refresh outcomes; null disables operator-facing notifications.</param>
     public static IObjectStoreBackend Create(
         ObjectStoreProvider provider,
@@ -37,6 +40,9 @@ internal static class ObjectStoreBackendFactory
         long? multipartThresholdBytes = null,
         long? multipartPartSizeBytes = null,
         int? retryMaxAttempts = null,
+        int? maxConcurrentUploads = null,
+        int? maxConcurrentDownloads = null,
+        int? maxMultipartParts = null,
         ICredentialRefreshNotifier? refreshNotifier = null)
     {
         var upLimiter = CreateLimiter(bandwidth?.UpBytesPerSecond);
@@ -45,7 +51,8 @@ internal static class ObjectStoreBackendFactory
         {
             ObjectStoreProvider.S3 => new S3.S3Backend(
                 bucket, endpointUrl, keyPrefix, region, credentials, upLimiter, downLimiter,
-                multipartThresholdBytes, multipartPartSizeBytes, retryMaxAttempts, refreshNotifier),
+                multipartThresholdBytes, multipartPartSizeBytes, retryMaxAttempts,
+                maxConcurrentUploads, maxConcurrentDownloads, maxMultipartParts, refreshNotifier),
             ObjectStoreProvider.Gcs => DisposeAndThrow(upLimiter, downLimiter, new NotSupportedException(
                 "Google Cloud Storage backend is not yet implemented. " +
                 "Currently only --provider s3 is supported.")),

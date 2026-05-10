@@ -86,6 +86,27 @@ internal static class MountOptionsBuilder
                 $"(got {mount.RetryMaxAttempts}).");
         }
 
+        if (mount.MaxConcurrentUploads is < 1)
+        {
+            throw new OsvfsConfigException(
+                $"Mount '{mount.Name}': 'max-concurrent-uploads' must be at least 1 " +
+                $"(got {mount.MaxConcurrentUploads}).");
+        }
+
+        if (mount.MaxConcurrentDownloads is < 1)
+        {
+            throw new OsvfsConfigException(
+                $"Mount '{mount.Name}': 'max-concurrent-downloads' must be at least 1 " +
+                $"(got {mount.MaxConcurrentDownloads}).");
+        }
+
+        if (mount.MaxMultipartParts is < 1)
+        {
+            throw new OsvfsConfigException(
+                $"Mount '{mount.Name}': 'max-multipart-parts' must be at least 1 " +
+                $"(got {mount.MaxMultipartParts}).");
+        }
+
         var changeSource = mount.ChangeSource ?? ChangeSourceKind.Polling;
         if (changeSource is ChangeSourceKind.Events && string.IsNullOrEmpty(mount.EventQueue))
         {
@@ -115,6 +136,9 @@ internal static class MountOptionsBuilder
             MultipartThresholdBytes = multipartThresholdBytes,
             MultipartPartSizeBytes = multipartPartSizeBytes,
             RetryMaxAttempts = mount.RetryMaxAttempts,
+            MaxConcurrentUploads = mount.MaxConcurrentUploads,
+            MaxConcurrentDownloads = mount.MaxConcurrentDownloads,
+            MaxMultipartParts = mount.MaxMultipartParts,
             AllowUnversioned = mount.AllowUnversioned ?? false,
             RefreshNotifier = refreshNotifier,
         };

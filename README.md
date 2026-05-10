@@ -181,9 +181,10 @@ both paced by the same ceiling.
 
 `osvfs` routes any upload at or above `multipart-threshold` through the
 S3 multipart path, splitting the payload into `multipart-part-size`
-chunks that `TransferUtility` uploads in parallel. The defaults (8 MiB
-threshold, 5 MiB parts) target a typical office connection, but two
-common scenarios benefit from explicit tuning:
+chunks that `TransferUtility` uploads in parallel. The defaults (16 MiB
+threshold, 5 MiB parts) match the AWS SDK v4 default for
+`MinSizeBeforePartUpload`, but two common scenarios benefit from
+explicit tuning:
 
 | Scenario | Suggested settings | Why |
 | --- | --- | --- |
@@ -203,6 +204,45 @@ upload at completion time:
   largest object you can upload is `part-size × 10 000` (16 MiB parts
   → 160 GiB max; 64 MiB parts → 640 GiB max). Pick a part size large
   enough to fit your largest expected file.
+
+### Tuning request concurrency
+
+`osvfs` caps the number of in-flight S3 calls per direction so a burst of
+hydrations or background uploads cannot saturate the SDK's HTTP pool or
+overwhelm the bucket. Three independent knobs in `osvfs.toml` control the
+ceiling:
+
+| Key | Default | What it bounds |
+| --- | --- | --- |
+| `max-concurrent-uploads` | `4` | Distinct `UploadAsync` calls in flight. One save = one permit, regardless of how many multipart parts the SDK fans the call out into. |
+| `max-concurrent-downloads` | `8` | Distinct `ReadRangeAsync` calls in flight (one per ProjFS hydration request). |
+| `max-multipart-parts` | `10` | Multipart parts uploaded **inside a single `UploadAsync` call**, threaded through to `TransferUtilityConfig.ConcurrentServiceRequests`. |
+
+The two ceilings are orthogonal: the *outer* gate (`max-concurrent-uploads`)
+limits how many uploads start at once, and the *inner* gate
+(`max-multipart-parts`) limits how many of one upload's parts ride the
+network in parallel. The peak in-flight S3 part PUTs at any instant is at
+most `max-concurrent-uploads × max-multipart-parts`. The HTTP connection
+pool is sized as `max(max-concurrent-uploads, max-concurrent-downloads) × 2`
+so connection exhaustion is not the binding constraint.
+
+| Scenario | Suggested settings | Why |
+| --- | --- | --- |
+| Fat link, multi-GiB files | `max-concurrent-uploads = 2`, `max-multipart-parts = 16` | One upload at a time, but each upload pushes many parts in parallel — fastest single-file throughput. |
+| Many small files (build artifacts, photos) | `max-concurrent-uploads = 8`, `max-multipart-parts = 4` | Lots of tiny PUTs in flight; per-upload parallelism is wasted on small files. |
+| Flaky upstream / 5xx storms | `max-concurrent-uploads = 2`, `max-concurrent-downloads = 4` | Smaller bursts give the SDK's adaptive retry token bucket room to back off. |
+| Bucket with low TPS quotas | Halve all three values | Caps total requests/sec so you stay below `RequestLimitExceeded` thresholds. |
+
+```toml
+bucket                    = "my-bucket"
+root-folder               = "C:/Users/you/OSVFS"
+max-concurrent-uploads    = 4
+max-concurrent-downloads  = 8
+max-multipart-parts       = 10
+```
+
+All three values must be ≥ 1; OSVFS rejects zero or negative values at
+startup.
 
 ### Retry policy
 
@@ -510,9 +550,12 @@ prefix               = "team-a/"                 # optional
 aws-profile          = "prod"                    # optional
 bandwidth-up         = "5M"                      # optional, "0" / omit = unlimited
 bandwidth-down       = "10M"                     # optional, "0" / omit = unlimited
-multipart-threshold  = "8M"                      # optional
+multipart-threshold  = "16M"                     # optional, default 16 MiB (AWS SDK v4 default)
 multipart-part-size  = "16M"                     # optional, 5M..5G
 retry-max-attempts   = 3                         # optional, 1 disables retries
+max-concurrent-uploads   = 4                     # optional, in-flight UploadAsync calls
+max-concurrent-downloads = 8                     # optional, in-flight ReadRangeAsync calls
+max-multipart-parts      = 10                    # optional, parallel parts per upload
 log-format           = "text"                    # optional, "text" or "json"
 allow-unversioned    = false                     # DANGER: skip the bucket-versioning safety check
 verbose              = false
@@ -868,7 +911,7 @@ Roughly:
   behind the provider-neutral [`IObjectStoreBackend`](src/OSVFS.Core/ObjectStore/IObjectStoreBackend.cs)
   with the small, ProjFS-shaped surface the provider needs (list, head,
   range read, upload, delete, rename-by-copy). Uploads at or above the
-  configured `multipart-threshold` (default 8 MiB) are routed through
+  configured `multipart-threshold` (default 16 MiB) are routed through
   `TransferUtility` so large files are split into `multipart-part-size`
   chunks (default 5 MiB) and uploaded in parallel. It lives in a cross-platform Core library so
   integration tests can run against LocalStack on Linux without pulling in

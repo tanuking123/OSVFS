@@ -108,6 +108,25 @@ internal sealed class OsvfsMountConfig
     public int? RetryMaxAttempts { get; init; }
 
     /// <summary>
+    /// Maximum number of in-flight upload API calls. Null falls back to the
+    /// backend default. Mapped to <c>max-concurrent-uploads</c> in TOML.
+    /// </summary>
+    public int? MaxConcurrentUploads { get; init; }
+
+    /// <summary>
+    /// Maximum number of in-flight download API calls. Null falls back to the
+    /// backend default. Mapped to <c>max-concurrent-downloads</c> in TOML.
+    /// </summary>
+    public int? MaxConcurrentDownloads { get; init; }
+
+    /// <summary>
+    /// Maximum number of multipart parts uploaded in parallel inside a single
+    /// upload. Null falls back to the backend default. Mapped to
+    /// <c>max-multipart-parts</c> in TOML.
+    /// </summary>
+    public int? MaxMultipartParts { get; init; }
+
+    /// <summary>
     /// When true, skip the bucket-versioning safety check and instead emit a
     /// repeated warning. Intended for CI / disposable buckets only.
     /// </summary>
@@ -139,6 +158,9 @@ internal sealed class OsvfsMountConfig
         MultipartThreshold = overlay.MultipartThreshold ?? MultipartThreshold,
         MultipartPartSize = overlay.MultipartPartSize ?? MultipartPartSize,
         RetryMaxAttempts = overlay.RetryMaxAttempts ?? RetryMaxAttempts,
+        MaxConcurrentUploads = overlay.MaxConcurrentUploads ?? MaxConcurrentUploads,
+        MaxConcurrentDownloads = overlay.MaxConcurrentDownloads ?? MaxConcurrentDownloads,
+        MaxMultipartParts = overlay.MaxMultipartParts ?? MaxMultipartParts,
         AllowUnversioned = overlay.AllowUnversioned ?? AllowUnversioned,
     };
 }

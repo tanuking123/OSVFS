@@ -390,6 +390,9 @@ internal static class LostAndFoundCommandFactory
             options.MultipartThresholdBytes,
             options.MultipartPartSizeBytes,
             options.RetryMaxAttempts,
+            options.MaxConcurrentUploads,
+            options.MaxConcurrentDownloads,
+            options.MaxMultipartParts,
             options.RefreshNotifier);
     }
 

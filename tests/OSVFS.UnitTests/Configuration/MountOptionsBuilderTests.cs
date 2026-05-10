@@ -113,6 +113,76 @@ public class MountOptionsBuilderTests
         Assert.Contains("retry-max-attempts", ex.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Build_throws_when_max_concurrent_uploads_below_one(int value)
+    {
+        var mount = new OsvfsMountConfig
+        {
+            Name = "alpha",
+            Bucket = "alpha-bucket",
+            RootFolder = @"C:\mounts\alpha",
+            MaxConcurrentUploads = value,
+        };
+
+        var ex = Assert.Throws<OsvfsConfigException>(() =>
+            MountOptionsBuilder.Build(mount, new FakeCredentialStore(), NullLogger.Instance));
+        Assert.Contains("max-concurrent-uploads", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_throws_when_max_concurrent_downloads_below_one()
+    {
+        var mount = new OsvfsMountConfig
+        {
+            Name = "alpha",
+            Bucket = "alpha-bucket",
+            RootFolder = @"C:\mounts\alpha",
+            MaxConcurrentDownloads = 0,
+        };
+
+        var ex = Assert.Throws<OsvfsConfigException>(() =>
+            MountOptionsBuilder.Build(mount, new FakeCredentialStore(), NullLogger.Instance));
+        Assert.Contains("max-concurrent-downloads", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_throws_when_max_multipart_parts_below_one()
+    {
+        var mount = new OsvfsMountConfig
+        {
+            Name = "alpha",
+            Bucket = "alpha-bucket",
+            RootFolder = @"C:\mounts\alpha",
+            MaxMultipartParts = 0,
+        };
+
+        var ex = Assert.Throws<OsvfsConfigException>(() =>
+            MountOptionsBuilder.Build(mount, new FakeCredentialStore(), NullLogger.Instance));
+        Assert.Contains("max-multipart-parts", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Build_threads_concurrency_settings_through_to_options()
+    {
+        var mount = new OsvfsMountConfig
+        {
+            Name = "alpha",
+            Bucket = "alpha-bucket",
+            RootFolder = @"C:\mounts\alpha",
+            MaxConcurrentUploads = 6,
+            MaxConcurrentDownloads = 12,
+            MaxMultipartParts = 20,
+        };
+
+        var options = MountOptionsBuilder.Build(mount, new FakeCredentialStore(), NullLogger.Instance);
+
+        Assert.Equal(6, options.MaxConcurrentUploads);
+        Assert.Equal(12, options.MaxConcurrentDownloads);
+        Assert.Equal(20, options.MaxMultipartParts);
+    }
+
     [Fact]
     public void Build_resolves_aws_profile_through_credential_store()
     {
