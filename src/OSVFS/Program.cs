@@ -24,10 +24,11 @@ rootCommand.Subcommands.Add(MountCommandFactory.BuildMountAllCommand(credentialS
 
 rootCommand.SetAction(parseResult =>
 {
+    var cliConfigPath = parseResult.GetValue(cliOptions.ConfigPath);
     OsvfsConfigFile? fileConfig;
     try
     {
-        fileConfig = OsvfsConfigFileLoader.LoadFromDefaultLocations();
+        fileConfig = OsvfsConfigFileLoader.LoadFromDefaultLocations(cliConfigPath);
     }
     catch (OsvfsConfigException ex)
     {
@@ -44,9 +45,10 @@ rootCommand.SetAction(parseResult =>
     if (fileConfig is null || fileConfig.Mounts.Count == 0)
     {
         logger.LogError(
-            "No mount is configured. Create osvfs.toml in the current directory or " +
-            "%APPDATA%\\OSVFS\\config.toml with at least 'bucket' and 'root-folder' (legacy " +
-            "single-mount form) or one or more [[mount]] entries.");
+            "No mount is configured. Create osvfs.toml next to osvfs.exe or " +
+            "%APPDATA%\\OSVFS\\config.toml (or pass --config <path>) with at least " +
+            "'bucket' and 'root-folder' (legacy single-mount form) or one or more " +
+            "[[mount]] entries.");
         return ExitGeneralException;
     }
 

@@ -5,17 +5,19 @@ using Tomlyn.Model;
 namespace OSVFS.Configuration;
 
 /// <summary>
-/// Loads <c>osvfs.toml</c> from the project-local working directory and the
-/// user-global <c>%APPDATA%\OSVFS\config.toml</c>, then merges them with the
-/// project file taking precedence. Tomlyn is used through the AOT-safe
-/// <see cref="TomlTable"/> API; reflection-based model binding is avoided.
+/// Loads <c>osvfs.toml</c> from up to three sources and merges them in
+/// increasing-priority order: the file shipped next to <c>osvfs.exe</c>, the
+/// user-global <c>%APPDATA%\OSVFS\config.toml</c>, and the optional file
+/// pointed at by <c>--config &lt;path&gt;</c>. Tomlyn is used through the
+/// AOT-safe <see cref="TomlTable"/> API; reflection-based model binding is
+/// avoided.
 /// </summary>
 internal static class OsvfsConfigFileLoader
 {
     /// <summary>
-    /// File name searched for in the current working directory.
+    /// File name searched for next to <c>osvfs.exe</c>.
     /// </summary>
-    public const string ProjectFileName = "osvfs.toml";
+    public const string ExeLocalFileName = "osvfs.toml";
 
     /// <summary>
     /// File name searched for under <c>%APPDATA%\OSVFS\</c>.
@@ -36,10 +38,19 @@ internal static class OsvfsConfigFileLoader
 
     /// <summary>
     /// Locates the standard config files and returns the merged result, or null
-    /// when neither file exists. Project-local entries override user-global ones.
+    /// when no source contributed any keys. Sources are merged in this priority
+    /// order (later sources override earlier ones on a per-key basis):
+    /// <list type="number">
+    ///   <item><description>The file shipped next to <c>osvfs.exe</c> (lowest priority — acts as a baseline / packaged default).</description></item>
+    ///   <item><description><c>%APPDATA%\OSVFS\config.toml</c> (user-global overrides).</description></item>
+    ///   <item><description><paramref name="cliConfigPath"/> when supplied via <c>--config &lt;path&gt;</c> (highest priority).</description></item>
+    /// </list>
+    /// A missing exe-adjacent or user-global file is silently skipped; a missing
+    /// <paramref name="cliConfigPath"/> throws <see cref="OsvfsConfigException"/>
+    /// because the operator explicitly asked for it.
     /// </summary>
-    public static OsvfsConfigFile? LoadFromDefaultLocations()
-        => LoadFromPaths(GetUserConfigPath(), GetProjectConfigPath());
+    public static OsvfsConfigFile? LoadFromDefaultLocations(string? cliConfigPath = null)
+        => LoadFromPaths(GetExeLocalConfigPath(), GetUserConfigPath(), cliConfigPath);
 
     /// <summary>
     /// Returns the absolute path to <c>%APPDATA%\OSVFS\config.toml</c>, or null
@@ -55,26 +66,60 @@ internal static class OsvfsConfigFileLoader
     }
 
     /// <summary>
-    /// Returns the absolute path to <c>./osvfs.toml</c> in the current working
-    /// directory.
+    /// Returns the absolute path to <c>osvfs.toml</c> next to <c>osvfs.exe</c>.
+    /// Uses <see cref="AppContext.BaseDirectory"/> so the lookup is independent
+    /// of the operator's current working directory and works the same in both
+    /// Native AOT publish output and <c>dotnet run</c>.
     /// </summary>
-    public static string GetProjectConfigPath()
-        => Path.Combine(Environment.CurrentDirectory, ProjectFileName);
+    public static string GetExeLocalConfigPath()
+        => Path.Combine(AppContext.BaseDirectory, ExeLocalFileName);
 
     /// <summary>
-    /// Loads zero, one, or both files in priority order (user file applied first,
-    /// project file overlaid on top) and returns the merged config. Missing files
-    /// are silently skipped; malformed files throw <see cref="OsvfsConfigException"/>.
+    /// Loads each non-null source in turn and overlays them in increasing
+    /// priority order: <paramref name="exeLocalPath"/> first, then
+    /// <paramref name="userPath"/>, then <paramref name="cliConfigPath"/>.
+    /// Missing exe-adjacent or user-global files are silently skipped; a
+    /// missing <paramref name="cliConfigPath"/> throws because the operator
+    /// passed <c>--config</c> explicitly.
     /// </summary>
-    public static OsvfsConfigFile? LoadFromPaths(string? userPath, string? projectPath)
+    public static OsvfsConfigFile? LoadFromPaths(
+        string? exeLocalPath, string? userPath, string? cliConfigPath)
     {
-        var userConfig = TryLoadFile(userPath);
-        var projectConfig = TryLoadFile(projectPath);
+        var exeLocal = TryLoadFile(exeLocalPath);
+        var user = TryLoadFile(userPath);
+        var cli = LoadCliConfigFile(cliConfigPath);
 
-        if (userConfig is null && projectConfig is null) return null;
-        if (userConfig is null) return projectConfig;
-        if (projectConfig is null) return userConfig;
-        return userConfig.MergeOverlay(projectConfig);
+        OsvfsConfigFile? merged = null;
+        Overlay(ref merged, exeLocal);
+        Overlay(ref merged, user);
+        Overlay(ref merged, cli);
+        return merged;
+    }
+
+    /// <summary>
+    /// Loads the file requested via <c>--config</c>. Unlike the default
+    /// sources, a missing path is treated as a fatal user error.
+    /// </summary>
+    private static OsvfsConfigFile? LoadCliConfigFile(string? cliConfigPath)
+    {
+        if (string.IsNullOrEmpty(cliConfigPath)) return null;
+        if (!File.Exists(cliConfigPath))
+        {
+            throw new OsvfsConfigException(
+                $"OSVFS config file '{cliConfigPath}' (passed via --config) does not exist.");
+        }
+        return TryLoadFile(cliConfigPath);
+    }
+
+    /// <summary>
+    /// Folds <paramref name="overlay"/> on top of <paramref name="merged"/>,
+    /// keeping <paramref name="merged"/> as the running accumulator. A null
+    /// overlay leaves the accumulator untouched.
+    /// </summary>
+    private static void Overlay(ref OsvfsConfigFile? merged, OsvfsConfigFile? overlay)
+    {
+        if (overlay is null) return;
+        merged = merged is null ? overlay : merged.MergeOverlay(overlay);
     }
 
     /// <summary>

@@ -439,47 +439,83 @@ public class OsvfsConfigFileLoaderTests
     }
 
     [Fact]
-    public void LoadFromPaths_returns_null_when_neither_file_exists()
+    public void LoadFromPaths_returns_null_when_no_source_exists()
     {
         var missing = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".toml");
-        Assert.Null(OsvfsConfigFileLoader.LoadFromPaths(missing, missing));
+        Assert.Null(OsvfsConfigFileLoader.LoadFromPaths(missing, missing, null));
     }
 
     [Fact]
-    public void LoadFromPaths_project_legacy_mount_replaces_user_legacy_mount()
+    public void LoadFromPaths_user_legacy_mount_replaces_exe_local_legacy_mount()
     {
         using var fs = new TempFiles();
-        var userPath = fs.Write("user.toml", """
-            bucket = "user-bucket"
+        var exeLocalPath = fs.Write("exe.toml", """
+            bucket = "exe-bucket"
             region = "us-east-1"
             verbose = false
             """);
-        var projectPath = fs.Write("project.toml", """
-            bucket = "project-bucket"
+        var userPath = fs.Write("user.toml", """
+            bucket = "user-bucket"
             verbose = true
             """);
 
-        var merged = OsvfsConfigFileLoader.LoadFromPaths(userPath, projectPath);
+        var merged = OsvfsConfigFileLoader.LoadFromPaths(exeLocalPath, userPath, null);
 
         Assert.NotNull(merged);
+        // User-global keys overlay on top of the exe-adjacent baseline.
         Assert.True(merged.Verbose);
         var mount = Assert.Single(merged.Mounts);
-        // Project file defines its own legacy mount, so the user's region is
-        // not carried over (mount lists merge as a unit, not field-by-field).
-        Assert.Equal("project-bucket", mount.Bucket);
+        // User defines its own legacy mount, so the exe-adjacent file's region
+        // is not carried over (mount lists merge as a unit, not field-by-field).
+        Assert.Equal("user-bucket", mount.Bucket);
         Assert.Null(mount.Region);
     }
 
     [Fact]
-    public void LoadFromPaths_returns_user_file_when_project_missing()
+    public void LoadFromPaths_returns_exe_local_when_user_and_cli_missing()
     {
         using var fs = new TempFiles();
-        var userPath = fs.Write("user.toml", "bucket = \"user-only\"");
+        var exeLocalPath = fs.Write("exe.toml", "bucket = \"exe-only\"");
 
-        var merged = OsvfsConfigFileLoader.LoadFromPaths(userPath, fs.PathFor("absent.toml"));
+        var merged = OsvfsConfigFileLoader.LoadFromPaths(
+            exeLocalPath, fs.PathFor("absent.toml"), null);
 
         Assert.NotNull(merged);
-        Assert.Equal("user-only", Assert.Single(merged.Mounts).Bucket);
+        Assert.Equal("exe-only", Assert.Single(merged.Mounts).Bucket);
+    }
+
+    [Fact]
+    public void LoadFromPaths_cli_config_overrides_user_and_exe_local()
+    {
+        using var fs = new TempFiles();
+        var exeLocalPath = fs.Write("exe.toml", """
+            verbose = false
+            bucket = "exe-bucket"
+            """);
+        var userPath = fs.Write("user.toml", "bucket = \"user-bucket\"");
+        var cliPath = fs.Write("cli.toml", """
+            verbose = true
+            bucket = "cli-bucket"
+            """);
+
+        var merged = OsvfsConfigFileLoader.LoadFromPaths(exeLocalPath, userPath, cliPath);
+
+        Assert.NotNull(merged);
+        Assert.True(merged.Verbose);
+        Assert.Equal("cli-bucket", Assert.Single(merged.Mounts).Bucket);
+    }
+
+    [Fact]
+    public void LoadFromPaths_missing_cli_config_throws()
+    {
+        // The CLI flag is an explicit operator request; a missing file is a
+        // configuration error rather than a silent fallback to the next
+        // source.
+        var missing = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".toml");
+
+        var ex = Assert.Throws<OsvfsConfigException>(() =>
+            OsvfsConfigFileLoader.LoadFromPaths(null, null, missing));
+        Assert.Contains("--config", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

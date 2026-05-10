@@ -450,15 +450,22 @@ oversized request that S3 would reject with an opaque 400.
 
 ### Configuration file
 
-Every option that can be passed to the root `osvfs` command can also be set
-in a TOML configuration file. Two locations are searched, in this order:
+Mount settings live exclusively in a TOML configuration file. Up to three
+sources are merged in **increasing-priority order** — later sources override
+earlier ones on a per-key basis:
 
-1. `./osvfs.toml` — relative to the current working directory (project-local)
-2. `%APPDATA%\OSVFS\config.toml` — per-user, machine-global
+1. **`osvfs.toml` next to `osvfs.exe`** (lowest priority — acts as the
+   packaged baseline). Resolved via `AppContext.BaseDirectory`, so the lookup
+   is independent of the current working directory.
+2. **`%APPDATA%\OSVFS\config.toml`** (per-user, machine-global). Operators
+   typically keep credentials / log preferences here.
+3. **`--config <path>`** (highest priority). Useful when an operator wants to
+   pick between several profile files without editing the standard locations.
+   Unlike sources #1 and #2, a missing path here is a hard error rather than
+   a silent skip.
 
-Values from the project file override the user file per key. CLI flags
-override both, so you can keep stable defaults in the file and tweak
-individual options at the prompt.
+Process-level CLI flags (`--verbose`, `--log-format`) override the merged
+config file values when supplied.
 
 `credentials` sub-commands are not affected by the config file; they always
 take their inputs from CLI arguments and interactive prompts.

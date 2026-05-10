@@ -77,10 +77,11 @@ internal static class MountCommandFactory
         Option<string?> nameOption,
         IAwsCredentialStore credentialStore)
     {
+        var cliConfigPath = parseResult.GetValue(cliOptions.ConfigPath);
         OsvfsConfigFile? fileConfig;
         try
         {
-            fileConfig = OsvfsConfigFileLoader.LoadFromDefaultLocations();
+            fileConfig = OsvfsConfigFileLoader.LoadFromDefaultLocations(cliConfigPath);
         }
         catch (OsvfsConfigException ex)
         {
@@ -136,10 +137,11 @@ internal static class MountCommandFactory
         MountCliOptions cliOptions,
         IAwsCredentialStore credentialStore)
     {
+        var cliConfigPath = parseResult.GetValue(cliOptions.ConfigPath);
         OsvfsConfigFile? fileConfig;
         try
         {
-            fileConfig = OsvfsConfigFileLoader.LoadFromDefaultLocations();
+            fileConfig = OsvfsConfigFileLoader.LoadFromDefaultLocations(cliConfigPath);
         }
         catch (OsvfsConfigException ex)
         {

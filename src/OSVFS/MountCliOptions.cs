@@ -32,6 +32,18 @@ internal sealed class MountCliOptions
     };
 
     /// <summary>
+    /// Path to an OSVFS config TOML file. When supplied, its keys overlay the
+    /// exe-adjacent <c>osvfs.toml</c> and the user-global
+    /// <c>%APPDATA%\OSVFS\config.toml</c>; the file must exist or startup
+    /// fails. Useful for switching between several mount profiles without
+    /// editing the standard locations.
+    /// </summary>
+    public Option<string?> ConfigPath { get; } = new("--config")
+    {
+        Description = "Path to an osvfs.toml file. Highest-priority config source: its keys override the user-global %APPDATA%\\OSVFS\\config.toml and the exe-adjacent osvfs.toml. The file must exist when the flag is supplied.",
+    };
+
+    /// <summary>
     /// Registers every option on <paramref name="command"/>. Used by the root
     /// command and each mount subcommand so the flags are uniformly available.
     /// </summary>
@@ -39,6 +51,7 @@ internal sealed class MountCliOptions
     {
         command.Options.Add(Verbose);
         command.Options.Add(LogFormat);
+        command.Options.Add(ConfigPath);
     }
 
     /// <summary>
