@@ -369,6 +369,35 @@ directories, so a bucket with 100 directories each containing 10k files
 costs roughly one paged `ListObjectsV2` per directory the user has opened,
 not one per 1000 keys in the bucket.
 
+### Read-only mounts
+
+A virtualization root can be flipped into a one-way "read from the bucket,
+never write back" mode by setting `read-only = true` in
+[`osvfs.toml`](#configuration-file):
+
+```toml
+bucket      = "my-bucket"
+root-folder = "C:/Users/you/OSVFS"
+read-only   = true
+```
+
+When `read-only` is on:
+
+- ProjFS pre-notifications for delete, rename, hardlink creation, and
+  placeholder-to-full conversion all return `false`, so Explorer (and any
+  other process) sees the operation fail at the filesystem layer before
+  any S3 call would happen. New-file create / overwrite / modified-handle
+  notifications are still received but the upload path is short-circuited.
+- The object-store change watcher is disabled. No `ListObjectsV2` polling
+  and no SQS receive runs, and the `.osvfs-lost+found` quarantine
+  directory is never created. A read-only mount is therefore a **frozen
+  snapshot** as of the moment each directory was first enumerated —
+  remote edits made by other clients are not picked up while the mount is
+  live.
+- Directory listings, placeholder creation, and on-demand hydration
+  (downloading file bodies on first open) work exactly as in read-write
+  mode: the read path is unaffected.
+
 ### Structured logging
 
 By default `osvfs` writes single-line, human-readable log entries to the
