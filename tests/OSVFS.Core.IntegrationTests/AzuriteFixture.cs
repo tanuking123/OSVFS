@@ -22,8 +22,7 @@ public sealed class AzuriteFixture : IAsyncLifetime
     // older tag (e.g. 3.32) used to break the IT every time the SDK rolled
     // its default API version forward.
     private readonly AzuriteContainer container =
-        new AzuriteBuilder()
-            .WithImage("mcr.microsoft.com/azure-storage/azurite:latest")
+        new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:latest")
             .Build();
 
     /// <summary>
