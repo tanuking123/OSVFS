@@ -1,16 +1,28 @@
 using OSVFS.ObjectStore;
 using Tomlyn;
 using Tomlyn.Model;
+using Tomlyn.Serialization;
 
 namespace OSVFS.Configuration;
+
+/// <summary>
+/// Source-generated Tomlyn context registering the <see cref="TomlTable"/>
+/// runtime model. Generated metadata replaces reflection so the loader stays
+/// AOT- and trim-clean (no IL2026 / IL3050 warnings).
+/// </summary>
+[TomlSerializable(typeof(TomlTable))]
+internal partial class OsvfsTomlContext : TomlSerializerContext
+{
+}
 
 /// <summary>
 /// Loads <c>osvfs.toml</c> from up to three sources and merges them in
 /// increasing-priority order: the file shipped next to <c>osvfs.exe</c>, the
 /// user-global <c>%APPDATA%\OSVFS\config.toml</c>, and the optional file
 /// pointed at by <c>--config &lt;path&gt;</c>. Tomlyn is used through the
-/// AOT-safe <see cref="TomlTable"/> API; reflection-based model binding is
-/// avoided.
+/// AOT-safe <see cref="TomlTable"/> runtime model
+/// (<see cref="TomlSerializer.Deserialize{T}(string, TomlSerializerOptions?)"/>);
+/// reflection-based POCO mapping is avoided so the loader stays AOT-clean.
 /// </summary>
 internal static class OsvfsConfigFileLoader
 {
@@ -152,15 +164,16 @@ internal static class OsvfsConfigFileLoader
     /// </summary>
     public static OsvfsConfigFile ParseContent(string content, string sourcePath)
     {
-        var doc = Toml.Parse(content, sourcePath);
-        if (doc.HasErrors)
+        TomlTable table;
+        try
         {
-            var first = doc.Diagnostics[0];
-            throw new OsvfsConfigException(
-                $"OSVFS config file '{sourcePath}' has syntax errors: {first.Message} at {first.Span}");
+            table = TomlSerializer.Deserialize(content, OsvfsTomlContext.Default.TomlTable) ?? new TomlTable();
         }
-
-        var table = doc.ToModel();
+        catch (TomlException ex)
+        {
+            throw new OsvfsConfigException(
+                $"OSVFS config file '{sourcePath}' has syntax errors: {ex.Message}", ex);
+        }
 
         var mounts = ReadMountArray(table, sourcePath);
         if (mounts.Count == 0)

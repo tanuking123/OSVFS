@@ -342,7 +342,7 @@
           "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.15.3, )",
           "System.CommandLine": "[2.0.8, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.8, )",
-          "Tomlyn": "[0.20.0, )"
+          "Tomlyn": "[2.4.0, )"
         }
       },
       "osvfs.core": {
@@ -485,9 +485,9 @@
       },
       "Tomlyn": {
         "type": "CentralTransitive",
-        "requested": "[0.20.0, )",
-        "resolved": "0.20.0",
-        "contentHash": "Z8TmFcz6oeULVSVGDvbF1h+gnCoy/6NbWrlsQg9f2i+lzqXtUoU4+2RJIm8/s/14uSu0OqTv6JcSngTw3tlkTQ=="
+        "requested": "[2.4.0, )",
+        "resolved": "2.4.0",
+        "contentHash": "6w9WetXD5WrsToN21uAH7vXIvP29z5V/tvb4h4FD4bSB+nL6M6e9uK5QWdEzlA6EolR1/VV9htEqi0Fm/9Qq5g=="
       }
     },
     "net10.0-windows7.0/win-x64": {}
