@@ -4,10 +4,10 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.23.3" />
-    <PackageVersion Include="AWSSDK.SQS" Version="4.0.2.31" />
-    <PackageVersion Include="AWSSDK.SSO" Version="4.0.2.30" />
-    <PackageVersion Include="AWSSDK.SSOOIDC" Version="4.0.3.31" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.24" />
+    <PackageVersion Include="AWSSDK.SQS" Version="4.0.3" />
+    <PackageVersion Include="AWSSDK.SSO" Version="4.0.3" />
+    <PackageVersion Include="AWSSDK.SSOOIDC" Version="4.0.4.2" />
     <!-- Azure Storage SDKs follow the SDK's newest default x-ms-version in
          production. The IntegrationTests/AzuriteFixture pins ServiceVersion via
          BlobClientOptions / QueueClientOptions to whatever the running Azurite
