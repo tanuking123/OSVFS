@@ -4,20 +4,20 @@
     "net10.0": {
       "AWSSDK.S3": {
         "type": "Direct",
-        "requested": "[4.0.23.3, )",
-        "resolved": "4.0.23.3",
-        "contentHash": "ASgWIoX8j6gG4plWXc22vGx0vVwDuqtjBwl3I2ICa2g6kqneSk47eYlGtRg61M/I8gvvtP8uDpIN73FsmlwqHg==",
+        "requested": "[4.0.24.2, )",
+        "resolved": "4.0.24.2",
+        "contentHash": "dqHbMTPFb0rOtS+0OavQeNJYZ6Av+usbEfgEV7O7KGlVB7TwNpIYxeYSbcp9nMk3gwHQT30M29M1REWdCvf6Gw==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.7.1, 5.0.0)"
+          "AWSSDK.Core": "[4.0.8.1, 5.0.0)"
         }
       },
       "AWSSDK.SQS": {
         "type": "Direct",
-        "requested": "[4.0.2.31, )",
-        "resolved": "4.0.2.31",
-        "contentHash": "KaOEMO0Wz5dDxbIeqPL53zqKeixRXR2S7ByypWp52cphG3FFC7wsbQHku4xtW3d1Zteguzx7TkNOnajko6QRig==",
+        "requested": "[4.0.3.2, )",
+        "resolved": "4.0.3.2",
+        "contentHash": "2yP5f3kI+JQkfa34+zDXT9dqSg37NGR5VBcXxLMLm7Z3SoZnzhzR3/40Apm3cZUQGfAxtCUA8H0cGfr36EE4pA==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.7.1, 5.0.0)"
+          "AWSSDK.Core": "[4.0.8.1, 5.0.0)"
         }
       },
       "Azure.Storage.Blobs": {
@@ -101,8 +101,8 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.7.1",
-        "contentHash": "XA0GHLwEMkoVu3u8neKnLEDD9ViXpn26ie9UhKXZXYRzCRfSFrLWpBOhupWlf+cJEFBYCC5mx2NsN8h59Y+M2Q=="
+        "resolved": "4.0.8.1",
+        "contentHash": "Zu5g0zQ3WNZrL+0RqRSa2guAcLJqbFwK7mxfm6stx/b3cfOdqt/k9Y6c/8rxyHSeVf+8iUJGV4J7WhbLs9zOpA=="
       },
       "Azure.Core": {
         "type": "Transitive",
@@ -391,8 +391,8 @@
       "osvfs.core": {
         "type": "Project",
         "dependencies": {
-          "AWSSDK.S3": "[4.0.23.3, )",
-          "AWSSDK.SQS": "[4.0.2.31, )",
+          "AWSSDK.S3": "[4.0.24.2, )",
+          "AWSSDK.SQS": "[4.0.3.2, )",
           "AWSSDK.SSO": "[4.0.2.30, )",
           "AWSSDK.SSOOIDC": "[4.0.3.31, )",
           "Azure.Identity": "[1.21.0, )",
